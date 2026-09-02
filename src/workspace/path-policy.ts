@@ -1,0 +1,28 @@
+import path from 'node:path';
+import { lstat, realpath } from 'node:fs/promises';
+import { AppError } from '../shared/errors.js';
+import { isSensitive } from './sensitive-file-policy.js';
+import type { IgnorePolicy } from './ignore-policy.js';
+
+export interface ResolvedPath { absolute: string; relative: string; stat: Awaited<ReturnType<typeof lstat>> }
+
+export class PathPolicy {
+  constructor(readonly root: string, readonly ignore: IgnorePolicy) {}
+  async resolve(input: string, options: { allowDirectory?: boolean; allowIgnored?: boolean } = {}): Promise<ResolvedPath> {
+    if (path.isAbsolute(input) || input.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
+    let decoded: string;
+    try { decoded = decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
+    const candidate = path.resolve(this.root, decoded);
+    if (!this.#inside(candidate)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '路径位于 workspace 之外');
+    let canonical: string;
+    try { canonical = await realpath(candidate); } catch { throw new AppError('FILE_NOT_FOUND', '目标不存在'); }
+    if (!this.#inside(canonical)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '符号链接指向 workspace 之外');
+    const relative = path.relative(this.root, canonical).replaceAll(path.sep, '/') || '.';
+    if (isSensitive(relative)) throw new AppError('SENSITIVE_FILE', '敏感文件策略禁止读取该路径');
+    if (!options.allowIgnored && this.ignore.isIgnored(relative)) throw new AppError('PATH_BLOCKED', 'ignore 策略禁止读取该路径');
+    const stat = await lstat(candidate);
+    if (!options.allowDirectory && !stat.isFile()) throw new AppError('INVALID_INPUT', '目标不是普通文件');
+    return { absolute: canonical, relative, stat };
+  }
+  #inside(candidate: string): boolean { const rel = path.relative(this.root, candidate); return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel)); }
+}

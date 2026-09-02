@@ -1,0 +1,6 @@
+# 生产配置、证书、客户数据、部署文件、生成目录
+config/*-prod.*
+certificates/
+customer-data/
+deploy/private/
+generated-large/
