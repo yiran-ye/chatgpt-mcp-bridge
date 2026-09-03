@@ -14,7 +14,7 @@ function run(args: string[], capture = false): string {
   return capture ? result.stdout.trim() : '';
 }
 
-const rawArgs = process.argv.slice(2); const tag = versionSchema.safeParse(rawArgs[0]); const flags = z.array(flagSchema).max(2).safeParse(rawArgs.slice(1));
+const passedArgs = process.argv.slice(2); const rawArgs = passedArgs[0] === '--' ? passedArgs.slice(1) : passedArgs; const tag = versionSchema.safeParse(rawArgs[0]); const flags = z.array(flagSchema).max(2).safeParse(rawArgs.slice(1));
 if (!tag.success || !flags.success || new Set(flags.data).size !== flags.data.length) throw new Error('用法：tsx scripts/github-release.ts vX.Y.Z [--historical] [--latest=false]');
 const version = tag.data.slice(1); const historical = flags.data.some(flag => flag === '--historical'); const latestFalse = flags.data.some(flag => flag === '--latest=false');
 const packageJson = packageSchema.parse(JSON.parse(await readFile('package.json', 'utf8')) as unknown);

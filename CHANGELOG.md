@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修正 GitHub Actions 调用 Release 辅助脚本时的参数分隔兼容性，并升级 Action 运行时。
+
 ## [0.3.0] - 2026-09-03
 
 - 新增显式启用的 workspace 文件补丁和受控命令执行能力。
