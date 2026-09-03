@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-03
+
 - 新增显式启用的 workspace 文件补丁和受控命令执行能力。
 - 新增访问模式、用户级命令配置、HTTP 写模式强认证及安全边界测试。
 - 新增基于 Git 标签和 Changelog 的 GitHub Release 自动化。
