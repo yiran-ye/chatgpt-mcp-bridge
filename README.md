@@ -10,7 +10,19 @@
 
 ## 安装
 
-需要 Node.js 20+、Git，推荐安装 ripgrep。当前版本尚未发布到 npm，请从 GitHub 源码安装：
+需要 Node.js 20+、Git，推荐安装 ripgrep。推荐直接从 npm 全局安装：
+
+```bash
+npm install --global chatgpt-mcp-bridge
+```
+
+安装完成后，可在任意目录运行 `chatgpt-mcp-bridge`。升级到最新版：
+
+```bash
+npm install --global chatgpt-mcp-bridge@latest
+```
+
+如果需要参与开发或从源码运行，再克隆 GitHub 仓库：
 
 ```bash
 git clone https://github.com/yiran-ye/chatgpt-mcp-bridge.git
@@ -21,7 +33,7 @@ pnpm build
 npm link
 ```
 
-完成后可在任意目录运行 `chatgpt-mcp-bridge`。源码升级使用 `git pull && pnpm install && pnpm build`；移除源码全局链接使用 `npm unlink -g chatgpt-mcp-bridge`。如果已经通过 `pnpm setup` 配置了全局 bin 目录，也可以使用 `pnpm link --global`。将来发布到 npm 后，可直接运行 `pnpm add -g chatgpt-mcp-bridge`。
+源码升级使用 `git pull && pnpm install && pnpm build`；移除源码全局链接使用 `npm unlink -g chatgpt-mcp-bridge`。如果已经通过 `pnpm setup` 配置了全局 bin 目录，也可以使用 `pnpm link --global`。
 
 ## 启动与开发
 

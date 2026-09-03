@@ -22,8 +22,12 @@ chatgpt-mcp-bridge serve \
 
 ### 3. 初始化 tunnel-client
 
+将创建好的 Restricted Runtime API Key 复制出来，并把下面的
+`YOUR_RUNTIME_API_KEY` 替换成真实 Key。该环境变量只在当前终端窗口中有效；
+关闭终端后需要重新设置。不要把 Key 写进仓库、脚本或提交记录。
+
 ```bash
-export CONTROL_PLANE_API_KEY="$(security find-generic-password -a "$USER" -s "chatgpt-mcp-bridge-tunnel" -w)"
+export CONTROL_PLANE_API_KEY='YOUR_RUNTIME_API_KEY'
 
 tunnel-client init \
   --sample sample_mcp_remote_no_auth \
@@ -36,7 +40,40 @@ tunnel-client doctor --profile chatgpt-mcp-bridge --explain
 tunnel-client run --profile chatgpt-mcp-bridge
 ```
 
-macOS 可将 Runtime API Key 存入 Keychain；其他平台请使用系统 Secret Manager 或仅在当前 shell 中导出环境变量。`tunnel-client run` 和本地 MCP Server 在 ChatGPT 使用期间都必须保持运行。
+例如，假设复制到的 Key 是 `example-runtime-key`，对应命令就是
+`export CONTROL_PLANE_API_KEY='example-runtime-key'`。单引号需要保留，但不要保留
+`YOUR_RUNTIME_API_KEY` 这个占位文字。执行命令后可用下面的命令确认变量已设置；
+它只显示是否成功，不会打印 Key：
+
+```bash
+test -n "$CONTROL_PLANE_API_KEY" && echo "API Key 已设置"
+```
+
+如果使用 macOS，并希望以后不再重复粘贴 Key，可以先将它保存到系统钥匙串。
+执行下面的命令后，终端会等待输入；粘贴 Key 并按回车，输入内容不会显示在屏幕上：
+
+```bash
+read -s "RUNTIME_KEY?请粘贴 Runtime API Key，然后按回车："
+echo
+security add-generic-password \
+  -a "$USER" \
+  -s "chatgpt-mcp-bridge-tunnel" \
+  -w "$RUNTIME_KEY" \
+  -U
+unset RUNTIME_KEY
+```
+
+以后打开新终端时，再用下面的命令从钥匙串读取 Key：
+
+```bash
+export CONTROL_PLANE_API_KEY="$(security find-generic-password \
+  -a "$USER" \
+  -s "chatgpt-mcp-bridge-tunnel" \
+  -w)"
+```
+
+Windows 或 Linux 用户可以使用系统 Secret Manager，或者每次只在当前终端中执行
+前面的 `export` 命令。`tunnel-client run` 和本地 MCP Server 在 ChatGPT 使用期间都必须保持运行。
 
 ### 4. 在 ChatGPT 创建连接
 
