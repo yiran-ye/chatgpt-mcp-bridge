@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AppError } from '../shared/errors.js';
 import { MAX_FILE_BYTES } from '../shared/constants.js';
 import { requestDigest } from '../security/output-limiter.js';
+import { sha256 } from './patch-service.js';
 import { isSensitive } from './sensitive-file-policy.js';
 import type { WorkspaceContext } from './workspace-context.js';
 
@@ -22,7 +23,7 @@ export class FileService {
     const maximumEnd = Math.min(input.endLine ?? lines.length, requestedStart + Math.min(input.maxLines ?? 300, 500) - 1, lines.length);
     const numbered = lines.slice(requestedStart - 1, maximumEnd).map((line, index) => `${requestedStart + index}: ${line}`).join('\n');
     const truncated = maximumEnd < Math.min(input.endLine ?? lines.length, lines.length);
-    return { path: resolved.relative, content: numbered, totalLines: lines.length, startLine: requestedStart, endLine: maximumEnd, truncated, ...(truncated ? { nextCursor: this.workspace.cursors.sign('read_file', maximumEnd, digest) } : {}) };
+    return { path: resolved.relative, sha256: sha256(content), content: numbered, totalLines: lines.length, startLine: requestedStart, endLine: maximumEnd, truncated, ...(truncated ? { nextCursor: this.workspace.cursors.sign('read_file', maximumEnd, digest) } : {}) };
   }
   async list(input: { path?: string; depth?: number; maxEntries?: number; cursor?: string }): Promise<Record<string, unknown>> {
     const resolved = await this.workspace.paths.resolve(input.path ?? '.', { allowDirectory: true, allowIgnored: true });

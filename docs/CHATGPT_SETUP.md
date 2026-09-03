@@ -20,6 +20,8 @@ chatgpt-mcp-bridge serve \
 
 在 OpenAI Platform 的 Tunnels 页面创建一个名为 `chatgpt-mcp-bridge` 的 Tunnel，并授权给需要使用它的 ChatGPT workspace。创建仅含 `Tunnels: Use` 权限的 Restricted Runtime API Key；不要使用 Admin Key 运行长期进程，也不要把 Key 写入仓库。
 
+OpenAI 官方说明见 [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。Tunnel 支持本地 stdio 或私有 HTTP MCP；对于写入/命令模式，推荐 stdio，使本地服务无需开放 HTTP 监听端口。
+
 ### 3. 初始化 tunnel-client
 
 将创建好的 Restricted Runtime API Key 复制出来，并把下面的
@@ -39,6 +41,21 @@ tunnel-client init \
 tunnel-client doctor --profile chatgpt-mcp-bridge --explain
 tunnel-client run --profile chatgpt-mcp-bridge
 ```
+
+写入模式的 stdio profile 示例：
+
+```bash
+tunnel-client init \
+  --sample sample_mcp_stdio_local \
+  --profile chatgpt-mcp-bridge-write \
+  --tunnel-id tunnel_REPLACE_ME \
+  --mcp-command "chatgpt-mcp-bridge serve --workspace /path/to/project --transport stdio --access workspace-write"
+
+tunnel-client doctor --profile chatgpt-mcp-bridge-write --explain
+tunnel-client run --profile chatgpt-mcp-bridge-write
+```
+
+`command-exec` 在 `--mcp-command` 中再加入 `--access command-exec --config /absolute/path/config.json`。
 
 例如，假设复制到的 Key 是 `example-runtime-key`，对应命令就是
 `export CONTROL_PLANE_API_KEY='example-runtime-key'`。单引号需要保留，但不要保留
@@ -80,6 +97,8 @@ Windows 或 Linux 用户可以使用系统 Secret Manager，或者每次只在�
 在可用的 ChatGPT Plugins/Connectors 入口创建插件，连接方式选择 Tunnel，选择 `chatgpt-mcp-bridge`，身份验证选择“无身份验证”，建议将插件命名为 `LocalCode`。本地服务没有 OAuth；Tunnel 负责从 OpenAI 控制面到本机 MCP 的连接。
 
 Developer Mode、Plugins 或自定义 MCP 功能入口依赖账号、workspace、管理员策略和产品界面；不要假设一定可见，也不要声称个人 ChatGPT Pro 一定具备入口。
+
+若要通过 HTTP Tunnel 使用 `workspace-write` 或 `command-exec`，本地 MCP 必须保持 loopback，并通过 `CHATGPT_MCP_BRIDGE_TOKEN` 或 `--auth-token` 设置至少 32 字符的 Bearer Token；只有在 tunnel-client profile 已配置相应的 MCP 侧认证时才使用该方式，否则使用上面的 stdio profile。优先启用宿主逐次审批或仅写工具审批。完全免审批只适用于可信机器、可信工作区和严格命令目录。
 
 本项目是社区维护的非官方开源项目，与 OpenAI 无隶属、合作、认证或背书关系。
 

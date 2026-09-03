@@ -9,4 +9,3 @@ tmp/
 .idea/
 .vscode/
 *.tsbuildinfo
-/scripts/release-local.mjs

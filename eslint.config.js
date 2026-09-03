@@ -7,7 +7,6 @@ export default tseslint.config(
       'coverage/**',
       'node_modules/**',
       'eslint.config.js',
-      'scripts/release-local.mjs',
     ],
   },
   eslint.configs.recommended,

@@ -8,14 +8,20 @@ import { bearerAuthorized } from './auth-policy.js';
 import { originAllowed } from './origin-policy.js';
 import { RateLimiter } from '../security/rate-limiter.js';
 import { AppError } from '../shared/errors.js';
+import type { BridgeOptions } from '../runtime/access.js';
+import { effectiveAccess } from '../runtime/access.js';
+import { MutationCoordinator } from '../security/mutation-coordinator.js';
 
 export interface HttpOptions { host: string; port: number; mcpPath: string; allowPublicBind: boolean; authToken?: string; requestTimeoutMs?: number; maxConcurrent?: number }
 export interface RunningHttpServer { server: Server; url: string; close(): Promise<void> }
 
-export async function startHttpServer(workspace: WorkspaceContext, options: HttpOptions, logger?: AuditLogger): Promise<RunningHttpServer> {
+export async function startHttpServer(workspace: WorkspaceContext, options: HttpOptions, logger?: AuditLogger, bridgeOptions?: BridgeOptions): Promise<RunningHttpServer> {
   const publicBind = !['127.0.0.1', 'localhost', '::1'].includes(options.host);
+  const writable = effectiveAccess(bridgeOptions) !== 'read-only';
+  if (writable && publicBind) throw new AppError('UNAUTHORIZED', '写入或命令模式禁止 public bind');
+  if (writable && (!options.authToken || options.authToken.length < 32)) throw new AppError('UNAUTHORIZED', 'HTTP 写入或命令模式需要至少 32 字符的认证 Token');
   if (publicBind && (!options.allowPublicBind || !options.authToken)) throw new AppError('UNAUTHORIZED', 'public bind 必须同时提供 --allow-public-bind 和认证 Token');
-  const rate = new RateLimiter(); let active = 0; const maxConcurrent = options.maxConcurrent ?? 16;
+  const rate = new RateLimiter(); let active = 0; const maxConcurrent = options.maxConcurrent ?? 16; const mutationCoordinator = bridgeOptions?.mutationCoordinator ?? new MutationCoordinator();
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff'); response.setHeader('Cache-Control', 'no-store');
     const remote = request.socket.remoteAddress ?? 'unknown';
@@ -27,7 +33,7 @@ export async function startHttpServer(workspace: WorkspaceContext, options: Http
     if (request.method !== 'POST' && request.method !== 'GET' && request.method !== 'DELETE') return json(response, 405, { error: 'method not allowed' });
     if (active >= maxConcurrent) return json(response, 503, { error: 'server busy' }); active++;
     const timer = setTimeout(() => { if (!response.headersSent) json(response, 408, { error: 'request timeout' }); request.destroy(); }, options.requestTimeoutMs ?? 30_000);
-    const mcp = createMcpServer(workspace, logger); const transportOptions = { sessionIdGenerator: undefined } as unknown as ConstructorParameters<typeof StreamableHTTPServerTransport>[0]; const transport = new StreamableHTTPServerTransport(transportOptions);
+    const mcp = createMcpServer(workspace, logger, { ...bridgeOptions, mutationCoordinator }); const transportOptions = { sessionIdGenerator: undefined } as unknown as ConstructorParameters<typeof StreamableHTTPServerTransport>[0]; const transport = new StreamableHTTPServerTransport(transportOptions);
     try { const body = request.method === 'POST' ? await readBody(request, 1024 * 1024) : undefined; await mcp.connect(transport as unknown as Parameters<typeof mcp.connect>[0]); await transport.handleRequest(request, response, body); }
     catch { if (!response.headersSent) json(response, 500, { jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: null }); }
     finally { clearTimeout(timer); active--; if (request.method === 'POST') { await transport.close().catch(() => undefined); await mcp.close().catch(() => undefined); } }

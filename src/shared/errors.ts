@@ -3,7 +3,9 @@ export type ErrorCode =
   | 'PATH_OUTSIDE_WORKSPACE' | 'PATH_BLOCKED' | 'SENSITIVE_FILE' | 'FILE_NOT_FOUND'
   | 'FILE_TOO_LARGE' | 'BINARY_FILE' | 'INVALID_GIT_REF' | 'GIT_COMMAND_FAILED'
   | 'SEARCH_TOOL_UNAVAILABLE' | 'OUTPUT_LIMIT_EXCEEDED' | 'INVALID_CURSOR'
-  | 'UNAUTHORIZED' | 'ORIGIN_NOT_ALLOWED' | 'TIMEOUT' | 'INTERNAL_ERROR';
+  | 'UNAUTHORIZED' | 'ORIGIN_NOT_ALLOWED' | 'TIMEOUT' | 'INTERNAL_ERROR'
+  | 'WRITE_DISABLED' | 'INVALID_PATCH' | 'PATCH_CONFLICT' | 'COMMAND_NOT_ALLOWED'
+  | 'COMMAND_CONFIG_INVALID' | 'COMMAND_FAILED';
 
 export class AppError extends Error {
   constructor(public readonly code: ErrorCode, message: string) { super(message); this.name = 'AppError'; }
