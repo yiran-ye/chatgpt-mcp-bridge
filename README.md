@@ -99,7 +99,9 @@ stdio 模式的 stdout 仅用于 MCP 协议，日志写入 stderr。
 }
 ```
 
-配置默认位于 `~/.chatgpt-mcp-bridge/config.json`，也可用 `--config` 指定。
+配置会依次查找：显式 `--config`、项目根目录的 `.chatgpt-mcp-bridge/config.json`、全局 `~/.chatgpt-mcp-bridge/config.json`。项目级配置优先于全局配置；也可以运行 `chatgpt-mcp-bridge config /path/to/project` 查看最终选中的路径和来源。
+
+所有 CLI 命令均可使用缩写 `cmb`，例如 `cmb config .`、`cmb doctor .` 或 `cmb serve /path/to/project`。
 
 ```bash
 chatgpt-mcp-bridge serve /path/to/project \

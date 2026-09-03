@@ -55,7 +55,7 @@ tunnel-client doctor --profile chatgpt-mcp-bridge-write --explain
 tunnel-client run --profile chatgpt-mcp-bridge-write
 ```
 
-`command-exec` 在 `--mcp-command` 中再加入 `--access command-exec --config /absolute/path/config.json`。
+`command-exec` 在 `--mcp-command` 中加入 `--access command-exec`。配置会优先读取项目根目录的 `.chatgpt-mcp-bridge/config.json`，不存在时回退到全局 `~/.chatgpt-mcp-bridge/config.json`；也可以通过 `--config /absolute/path/config.json` 显式覆盖。
 
 例如，假设复制到的 Key 是 `example-runtime-key`，对应命令就是
 `export CONTROL_PLANE_API_KEY='example-runtime-key'`。单引号需要保留，但不要保留

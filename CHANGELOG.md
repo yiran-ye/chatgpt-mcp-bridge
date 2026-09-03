@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- CLI 参数错误现在返回明确的 `INVALID_INPUT` 提示，不再误报为 `INTERNAL_ERROR`。
+- 新增项目级 `.chatgpt-mcp-bridge/config.json`，优先级高于全局配置，并在 `config` 输出中显示生效路径、来源和存在状态。
+- 新增完整 CLI 命令的 `cmb` 缩写别名。
+
 ## [0.3.1] - 2026-09-03
 
 - 修正 GitHub Actions 调用 Release 辅助脚本时的参数分隔兼容性，并升级 Action 运行时。

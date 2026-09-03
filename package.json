@@ -22,7 +22,8 @@
   },
   "type": "module",
   "bin": {
-    "chatgpt-mcp-bridge": "dist/cli.js"
+    "chatgpt-mcp-bridge": "dist/cli.js",
+    "cmb": "dist/cli.js"
   },
   "exports": "./dist/index.js",
   "files": [

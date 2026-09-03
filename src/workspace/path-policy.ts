@@ -9,7 +9,7 @@ export interface CreatablePath { absolute: string; relative: string }
 
 export class PathPolicy {
   constructor(readonly root: string, readonly ignore: IgnorePolicy) {}
-  async resolve(input: string, options: { allowDirectory?: boolean; allowIgnored?: boolean } = {}): Promise<ResolvedPath> {
+  async resolve(input: string, options: { allowDirectory?: boolean; allowIgnored?: boolean; allowBridgeConfig?: boolean } = {}): Promise<ResolvedPath> {
     if (path.isAbsolute(input) || input.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
     let decoded: string;
     try { decoded = decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
@@ -19,7 +19,7 @@ export class PathPolicy {
     try { canonical = await realpath(candidate); } catch { throw new AppError('FILE_NOT_FOUND', '目标不存在'); }
     if (!this.#inside(canonical)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '符号链接指向 workspace 之外');
     const relative = path.relative(this.root, canonical).replaceAll(path.sep, '/') || '.';
-    this.#assertAllowed(relative, options.allowIgnored);
+    this.#assertAllowed(relative, options.allowIgnored, options.allowBridgeConfig);
     const stat = await lstat(candidate);
     if (!options.allowDirectory && !stat.isFile()) throw new AppError('INVALID_INPUT', '目标不是普通文件');
     return { absolute: canonical, relative, stat };
@@ -38,9 +38,10 @@ export class PathPolicy {
     if (path.isAbsolute(input) || input.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
     try { return decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
   }
-  #assertAllowed(relative: string, allowIgnored = false): void {
+  #assertAllowed(relative: string, allowIgnored = false, allowBridgeConfig = false): void {
     const normalized = relative.replaceAll('\\', '/');
-    if (normalized === '.git' || normalized.startsWith('.git/') || normalized === '.chatgpt-mcp-bridge-ignore') throw new AppError('PATH_BLOCKED', '受保护的 Bridge/Git 路径不可访问');
+    const bridgeConfig = normalized === '.chatgpt-mcp-bridge' || normalized.startsWith('.chatgpt-mcp-bridge/');
+    if (normalized === '.git' || normalized.startsWith('.git/') || normalized === '.chatgpt-mcp-bridge-ignore' || (bridgeConfig && !allowBridgeConfig)) throw new AppError('PATH_BLOCKED', '受保护的 Bridge/Git 路径不可访问');
     if (isSensitive(normalized)) throw new AppError('SENSITIVE_FILE', '敏感文件策略禁止访问该路径');
     if (!allowIgnored && this.ignore.isIgnored(normalized)) throw new AppError('PATH_BLOCKED', 'ignore 策略禁止访问该路径');
   }
