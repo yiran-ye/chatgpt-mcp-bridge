@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-mcp-bridge",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "将 ChatGPT 和 MCP Client 安全连接到单个本地 Git 工作区的只读 MCP Bridge",
   "keywords": [
     "chatgpt",
