@@ -1,13 +1,25 @@
 {
-  "name": "local-code-mcp",
-  "version": "0.1.0",
-  "description": "只读本地代码 Model Context Protocol Server",
+  "name": "chatgpt-mcp-bridge",
+  "version": "0.2.0",
+  "description": "将 ChatGPT 和 MCP Client 安全连接到单个本地 Git 工作区的只读 MCP Bridge",
+  "keywords": ["chatgpt", "mcp", "model-context-protocol", "code-review", "git", "security"],
+  "license": "MIT",
+  "author": "yiran-ye",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yiran-ye/chatgpt-mcp-bridge.git"
+  },
+  "homepage": "https://github.com/yiran-ye/chatgpt-mcp-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/yiran-ye/chatgpt-mcp-bridge/issues"
+  },
   "type": "module",
-  "bin": { "local-code-mcp": "dist/cli.js" },
+  "bin": { "chatgpt-mcp-bridge": "dist/cli.js" },
   "exports": "./dist/index.js",
   "files": ["dist", "README.md", "LICENSE", "SECURITY.md", "docs", "examples"],
   "engines": { "node": ">=20" },
   "packageManager": "pnpm@10.15.1",
+  "publishConfig": { "access": "public" },
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.build.json",

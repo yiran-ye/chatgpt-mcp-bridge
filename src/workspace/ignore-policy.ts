@@ -8,7 +8,7 @@ export class IgnorePolicy {
   private constructor(matcher: Ignore) { this.#matcher = matcher; }
   static async create(root: string): Promise<IgnorePolicy> {
     const matcher = ignore().add(defaults);
-    try { matcher.add(await readFile(`${root}/.local-code-mcp-ignore`, 'utf8')); } catch { /* optional */ }
+    try { matcher.add(await readFile(`${root}/.chatgpt-mcp-bridge-ignore`, 'utf8')); } catch { /* optional */ }
     return new IgnorePolicy(matcher);
   }
   isIgnored(path: string): boolean { return path !== '.' && this.#matcher.ignores(path.replaceAll('\\', '/').replace(/^\.\//u, '')); }

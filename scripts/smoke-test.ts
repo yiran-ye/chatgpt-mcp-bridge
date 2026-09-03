@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { WorkspaceContext } from '../src/workspace/workspace-context.js';
 import { startHttpServer } from '../src/transports/http-server.js';
 
-const root = await mkdtemp(path.join(tmpdir(), 'local-code-mcp-smoke-'));
+const root = await mkdtemp(path.join(tmpdir(), 'chatgpt-mcp-bridge-smoke-'));
 try {
   execFileSync('git', ['init', '-b', 'main'], { cwd: root }); execFileSync('git', ['config', 'user.name', 'Smoke'], { cwd: root }); execFileSync('git', ['config', 'user.email', 'smoke@localhost.invalid'], { cwd: root });
   await writeFile(path.join(root, 'hello.ts'), 'export const hello = "world";\n'); execFileSync('git', ['add', '.'], { cwd: root }); execFileSync('git', ['commit', '-m', 'initial'], { cwd: root }); await writeFile(path.join(root, 'hello.ts'), 'export const hello = "changed";\n');

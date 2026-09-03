@@ -5,5 +5,5 @@ import type { AuditLogger } from '../security/audit-logger.js';
 
 export async function startStdio(workspace: WorkspaceContext, logger?: AuditLogger): Promise<void> {
   const server = createMcpServer(workspace, logger); await server.connect(new StdioServerTransport());
-  process.stderr.write(`[local-code-mcp] stdio ready (${workspace.name})\n`);
+  process.stderr.write(`[chatgpt-mcp-bridge] stdio ready (${workspace.name})\n`);
 }

@@ -5,7 +5,7 @@
 ## 防护
 
 - 启动时 canonicalize workspace；每次文件访问都 resolve + realpath + `path.relative` 检查，拒绝绝对路径、`..`、编码 traversal 和越界 symlink。
-- 强制敏感规则高于默认 ignore 与 `.local-code-mcp-ignore`，不可关闭。
+- 强制敏感规则高于默认 ignore 与 `.chatgpt-mcp-bridge-ignore`，不可关闭。
 - Git/rg 通过固定 executable 与参数数组启动，`shell=false`；Git ref、path 分开验证，pathspec 前使用 `--`。
 - Git 禁用 pager、external diff、textconv、color 和 optional locks；工具不 fetch、不修改仓库。
 - 输出、文件、diff、搜索、子进程、请求体、请求时间和并发均有限制；分页游标使用每进程随机密钥的 HMAC 防篡改。
@@ -20,4 +20,4 @@
 
 ## 报告漏洞
 
-请私下报告，避免提交包含真实密钥、路径、源码或利用细节的公开 issue。报告应包含最小复现和受影响版本。
+请通过 GitHub Security Advisories 的“Report a vulnerability”私下报告，避免提交包含真实密钥、路径、源码或利用细节的公开 issue。报告应包含最小复现和受影响版本。
