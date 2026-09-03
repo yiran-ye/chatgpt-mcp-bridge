@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-03
+
 - 修正 GitHub Actions 调用 Release 辅助脚本时的参数分隔兼容性，并升级 Action 运行时。
 - 新增 `chatgpt-mcp-bridge --version` 与 `chatgpt-mcp-bridge --help`。
 - 将默认命令配置文件统一迁移至 `~/.chatgpt-mcp-bridge/config.json`。
