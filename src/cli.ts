@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod/v4';
 import { WorkspaceContext } from './workspace/workspace-context.js';
 import { GitService } from './git/git-service.js';
@@ -37,4 +39,9 @@ async function executableAvailable(name: string): Promise<boolean> { const paths
 async function fileExists(file: string): Promise<boolean> { try { await access(file); return true; } catch { return false; } }
 async function portAvailable(host: string, port: number): Promise<boolean> { return await new Promise(resolve => { const server = createNetServer(); server.once('error', () => resolve(false)); server.listen(port, host, () => server.close(() => resolve(true))); }); }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main().catch(error => { const safe = safeError(error); process.stderr.write(`[${safe.code}] ${safe.message}\n`); process.exitCode = 1; });
+export function isMainModule(argvPath: string | undefined, moduleUrl = import.meta.url): boolean {
+  if (!argvPath) return false;
+  try { return realpathSync(argvPath) === realpathSync(fileURLToPath(moduleUrl)); } catch { return false; }
+}
+
+if (isMainModule(process.argv[1])) main().catch(error => { const safe = safeError(error); process.stderr.write(`[${safe.code}] ${safe.message}\n`); process.exitCode = 1; });

@@ -18,10 +18,10 @@ cd chatgpt-mcp-bridge
 corepack enable
 pnpm install
 pnpm build
-pnpm link --global
+npm link
 ```
 
-完成后可在任意目录运行 `chatgpt-mcp-bridge`。源码升级使用 `git pull && pnpm install && pnpm build && pnpm link --global`；卸载使用 `pnpm remove -g chatgpt-mcp-bridge`。将来发布到 npm 后，可直接运行 `pnpm add -g chatgpt-mcp-bridge`。
+完成后可在任意目录运行 `chatgpt-mcp-bridge`。源码升级使用 `git pull && pnpm install && pnpm build`；移除源码全局链接使用 `npm unlink -g chatgpt-mcp-bridge`。如果已经通过 `pnpm setup` 配置了全局 bin 目录，也可以使用 `pnpm link --global`。将来发布到 npm 后，可直接运行 `pnpm add -g chatgpt-mcp-bridge`。
 
 ## 启动与开发
 
