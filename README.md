@@ -99,7 +99,7 @@ stdio 模式的 stdout 仅用于 MCP 协议，日志写入 stderr。
 }
 ```
 
-配置默认位于 macOS 的 `~/Library/Application Support/chatgpt-mcp-bridge/config.json`、Linux 的 `${XDG_CONFIG_HOME:-~/.config}/chatgpt-mcp-bridge/config.json` 或 Windows 的 `%APPDATA%\chatgpt-mcp-bridge\config.json`，也可用 `--config` 指定。
+配置默认位于 `~/.chatgpt-mcp-bridge/config.json`，也可用 `--config` 指定。
 
 ```bash
 chatgpt-mcp-bridge serve /path/to/project \

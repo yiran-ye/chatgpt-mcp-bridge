@@ -11,11 +11,52 @@ import { AuditLogger, type LogLevel } from './security/audit-logger.js';
 import { startHttpServer } from './transports/http-server.js';
 import { startStdio } from './transports/stdio-server.js';
 import { safeError } from './shared/errors.js';
+import { PACKAGE_VERSION } from './shared/version.js';
 import { loadCommandConfig } from './runtime/command-config.js';
 import type { AccessMode, BridgeOptions } from './runtime/access.js';
 
 const schema = z.object({ command: z.enum(['serve', 'doctor', 'config']), workspace: z.string().min(1), transport: z.enum(['http', 'stdio']).default('http'), host: z.string().default('127.0.0.1'), port: z.number().int().min(1).max(65535).default(8765), mcpPath: z.string().regex(/^\/[A-Za-z0-9/_-]*$/u).default('/mcp'), allowPublicBind: z.boolean().default(false), authToken: z.string().min(16).optional(), logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'), auditLog: z.string().optional(), access: z.enum(['read-only', 'workspace-write', 'command-exec']).default('read-only'), configPath: z.string().min(1).optional() }).strict();
+const globalOptionSchema = z.tuple([z.enum(['--help', '--version'])]);
 type CliConfig = z.infer<typeof schema>;
+
+export const HELP_TEXT = `chatgpt-mcp-bridge ${PACKAGE_VERSION}
+
+用法:
+  chatgpt-mcp-bridge <command> [workspace] [options]
+
+命令:
+  serve    启动 MCP 服务
+  doctor   检查配置和运行环境
+  config   显示当前配置
+
+全局选项:
+  --help       显示帮助信息
+  --version    显示版本号
+
+常用选项:
+  --workspace <path>          工作区路径
+  --transport <http|stdio>    传输方式（默认: http）
+  --access <mode>             read-only、workspace-write 或 command-exec
+  --config <path>             命令配置文件
+                              默认: ~/.chatgpt-mcp-bridge/config.json
+  --host <host>               HTTP 监听地址
+  --port <port>               HTTP 监听端口
+  --mcp-path <path>           MCP HTTP 路径（默认: /mcp）
+  --allow-public-bind         允许监听非本机地址
+  --auth-token <token>        HTTP Bearer Token
+  --audit-log <path>          审计日志路径
+  --log-level <level>         日志级别
+
+示例:
+  chatgpt-mcp-bridge serve /path/to/project
+  chatgpt-mcp-bridge doctor --workspace /path/to/project
+`;
+
+export function globalOptionOutput(argv: string[]): string | undefined {
+  const parsed = globalOptionSchema.safeParse(argv);
+  if (!parsed.success) return undefined;
+  return parsed.data[0] === '--version' ? `${PACKAGE_VERSION}\n` : HELP_TEXT;
+}
 
 export function parseArgs(argv: string[]): CliConfig {
   if (argv[0] === '--') argv = argv.slice(1);
@@ -26,7 +67,9 @@ export function parseArgs(argv: string[]): CliConfig {
 }
 
 async function main(): Promise<void> {
-  const config = parseArgs(process.argv.slice(2)); const workspace = await WorkspaceContext.create(config.workspace); const logger = new AuditLogger(config.transport, config.logLevel as LogLevel, config.auditLog);
+  const argv = process.argv.slice(2); const globalOutput = globalOptionOutput(argv);
+  if (globalOutput !== undefined) { process.stdout.write(globalOutput); return; }
+  const config = parseArgs(argv); const workspace = await WorkspaceContext.create(config.workspace); const logger = new AuditLogger(config.transport, config.logLevel as LogLevel, config.auditLog);
   const commandConfig = config.access === 'command-exec' ? await loadCommandConfig(config.configPath) : undefined;
   const bridgeOptions: BridgeOptions = { access: config.access as AccessMode, ...(commandConfig ? { commandConfig } : {}) };
   if (config.command === 'config') { process.stdout.write(`${JSON.stringify(publicConfig(config, workspace.name, commandConfig ? Object.keys(commandConfig.commands) : []), null, 2)}\n`); return; }

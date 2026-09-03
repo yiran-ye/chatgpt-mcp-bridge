@@ -1,11 +1,12 @@
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { AuditLogger } from '../../src/security/audit-logger.js';
-import { isMainModule, parseArgs } from '../../src/cli.js';
-import { loadCommandConfig } from '../../src/runtime/command-config.js';
+import { globalOptionOutput, HELP_TEXT, isMainModule, parseArgs } from '../../src/cli.js';
+import { defaultCommandConfigPath, loadCommandConfig } from '../../src/runtime/command-config.js';
+import { PACKAGE_VERSION } from '../../src/shared/version.js';
 import { releaseNotes } from '../../scripts/release-notes.js';
 
 describe('日志与 CLI', () => {
@@ -14,6 +15,14 @@ describe('日志与 CLI', () => {
   it('CLI 解析显式访问模式和命令配置', () => expect(parseArgs(['serve', '.', '--access', 'command-exec', '--config', '/tmp/commands.json'])).toMatchObject({ access: 'command-exec', configPath: '/tmp/commands.json' }));
   it('CLI 兼容 pnpm 传入的 -- 分隔符', () => expect(parseArgs(['--', 'serve', '.'])).toMatchObject({ host: '127.0.0.1', port: 8765 }));
   it('CLI 拒绝未知参数', () => expect(() => parseArgs(['serve', '.', '--run-command', 'id'])).toThrow());
+  it('CLI 输出版本号', () => expect(globalOptionOutput(['--version'])).toBe(`${PACKAGE_VERSION}\n`));
+  it('CLI 输出帮助信息', () => {
+    expect(globalOptionOutput(['--help'])).toBe(HELP_TEXT);
+    expect(HELP_TEXT).toContain('chatgpt-mcp-bridge <command>');
+    expect(HELP_TEXT).toContain('~/.chatgpt-mcp-bridge/config.json');
+  });
+  it('CLI 不会吞掉带额外参数的全局选项', () => expect(globalOptionOutput(['--help', 'serve'])).toBeUndefined());
+  it('默认命令配置固定放在用户目录', () => expect(defaultCommandConfigPath()).toBe(path.join(homedir(), '.chatgpt-mcp-bridge', 'config.json')));
   it.skipIf(process.platform === 'win32')('CLI 入口识别可解析全局安装符号链接', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'cli-link-test-'));
     try {

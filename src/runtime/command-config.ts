@@ -27,9 +27,7 @@ export function parseCommandConfig(value: unknown): CommandConfig {
 }
 
 export function defaultCommandConfigPath(): string {
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'chatgpt-mcp-bridge', 'config.json');
-  if (process.platform === 'win32') return path.join(process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'), 'chatgpt-mcp-bridge', 'config.json');
-  return path.join(process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'), 'chatgpt-mcp-bridge', 'config.json');
+  return path.join(os.homedir(), '.chatgpt-mcp-bridge', 'config.json');
 }
 
 export async function loadCommandConfig(input?: string): Promise<CommandConfig> {
