@@ -57,6 +57,8 @@ tunnel-client run --profile chatgpt-mcp-bridge-write
 
 `command-exec` 在 `--mcp-command` 中加入 `--access command-exec`。配置会优先读取项目根目录的 `.chatgpt-mcp-bridge/config.json`，不存在时回退到全局 `~/.chatgpt-mcp-bridge/config.json`；也可以通过 `--config /absolute/path/config.json` 显式覆盖。
 
+无需 executable 白名单时可改用 `--access full-access`。该模式不使用 `--config`，调用方直接向 `run_command` 提交 executable 与参数数组；它不会解析 shell 字符串，但执行的程序仍拥有当前系统用户的文件与网络权限，只适用于可信环境。
+
 例如，假设复制到的 Key 是 `example-runtime-key`，对应命令就是
 `export CONTROL_PLANE_API_KEY='example-runtime-key'`。单引号需要保留，但不要保留
 `YOUR_RUNTIME_API_KEY` 这个占位文字。执行命令后可用下面的命令确认变量已设置；
@@ -98,7 +100,7 @@ Windows 或 Linux 用户可以使用系统 Secret Manager，或者每次只在�
 
 Developer Mode、Plugins 或自定义 MCP 功能入口依赖账号、workspace、管理员策略和产品界面；不要假设一定可见，也不要声称个人 ChatGPT Pro 一定具备入口。
 
-若要通过 HTTP Tunnel 使用 `workspace-write` 或 `command-exec`，本地 MCP 必须保持 loopback，并通过 `CHATGPT_MCP_BRIDGE_TOKEN` 或 `--auth-token` 设置至少 32 字符的 Bearer Token；只有在 tunnel-client profile 已配置相应的 MCP 侧认证时才使用该方式，否则使用上面的 stdio profile。优先启用宿主逐次审批或仅写工具审批。完全免审批只适用于可信机器、可信工作区和严格命令目录。
+若要通过 HTTP Tunnel 使用 `workspace-write`、`command-exec` 或 `full-access`，本地 MCP 必须保持 loopback，并通过 `CHATGPT_MCP_BRIDGE_TOKEN` 或 `--auth-token` 设置至少 32 字符的 Bearer Token；只有在 tunnel-client profile 已配置相应的 MCP 侧认证时才使用该方式，否则使用上面的 stdio profile。HTTP 命令还受本地请求 deadline 限制，长时间任务优先使用 stdio。优先启用宿主逐次审批或仅写工具审批。完全免审批及 `full-access` 只适用于可信机器和可信工作区。
 
 本项目是社区维护的非官方开源项目，与 OpenAI 无隶属、合作、认证或背书关系。
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- 新增 `--access full-access` 模式，无需预先配置命令白名单即可执行 PATH 中的程序，或通过 `PathPolicy` 校验的工作区相对程序。
+- 命令执行继续使用参数数组、`shell: false` 和最小环境变量，并补充 executable、目录、敏感路径、输出及超时边界校验。
+- HTTP 请求超时、客户端断开或 MCP 取消现在会终止对应的命令进程树并释放写任务互斥队列，避免命令在客户端超时后继续后台运行。
+
 ## [0.3.2] - 2026-09-03
 
 - CLI 参数错误现在返回明确的 `INVALID_INPUT` 提示，不再误报为 `INTERNAL_ERROR`。

@@ -1,4 +1,4 @@
-export type AccessMode = 'read-only' | 'workspace-write' | 'command-exec';
+export type AccessMode = 'read-only' | 'workspace-write' | 'command-exec' | 'full-access';
 
 export interface CommandDefinition {
   description: string;
@@ -19,6 +19,7 @@ export interface BridgeOptions {
   access?: AccessMode;
   commandConfig?: CommandConfig;
   mutationCoordinator?: MutationCoordinator;
+  abortSignal?: AbortSignal;
 }
 
 export function effectiveAccess(options?: BridgeOptions): AccessMode {

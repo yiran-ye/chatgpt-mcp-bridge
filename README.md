@@ -2,7 +2,7 @@
 
 > 将 ChatGPT 安全连接到本地 Git 工作区的可控 MCP Bridge。
 
-`chatgpt-mcp-bridge` 默认是只读的本地代码 MCP Server。除 Code Review 与架构分析外，也可以由用户在启动时显式开放单文件补丁或预配置命令；MCP 调用本身不能提升权限。
+`chatgpt-mcp-bridge` 默认是只读的本地代码 MCP Server。除 Code Review 与架构分析外，也可以由用户在启动时显式开放单文件补丁、预配置命令或不限白名单的命令执行；MCP 调用本身不能提升权限。
 
 > **非官方项目声明：** 本项目由社区独立维护，与 OpenAI 无隶属、合作、认证或背书关系。ChatGPT、OpenAI 及相关名称是其各自权利人的商标。
 
@@ -44,6 +44,7 @@ chatgpt-mcp-bridge serve /path/to/project
 chatgpt-mcp-bridge serve --workspace /path/to/project --transport http --host 127.0.0.1 --port 8765 --mcp-path /mcp
 chatgpt-mcp-bridge serve --workspace /path/to/project --transport stdio
 chatgpt-mcp-bridge serve --workspace /path/to/project --transport stdio --access workspace-write
+chatgpt-mcp-bridge serve --workspace /path/to/project --transport stdio --access full-access
 chatgpt-mcp-bridge doctor /path/to/project
 chatgpt-mcp-bridge config /path/to/project
 ```
@@ -99,7 +100,19 @@ stdio 模式的 stdout 仅用于 MCP 协议，日志写入 stderr。
 }
 ```
 
-配置会依次查找：显式 `--config`、项目根目录的 `.chatgpt-mcp-bridge/config.json`、全局 `~/.chatgpt-mcp-bridge/config.json`。项目级配置优先于全局配置；也可以运行 `chatgpt-mcp-bridge config /path/to/project` 查看最终选中的路径和来源。
+`full-access` 同样开放 `apply_patch` 和 `run_command`，但无需命令配置或 executable 白名单。调用方直接提交 `executable` 与 `args` 参数数组；`shell=false`，不会解析管道、重定向或其他 shell 语法。executable 可以是 PATH 中的程序名，或经过 `PathPolicy` 校验的 workspace 相对路径；绝对路径和越界路径会被拒绝。
+
+```json
+{
+  "executable": "pnpm",
+  "args": ["test"],
+  "cwd": ".",
+  "timeoutMs": 60000,
+  "maxOutputBytes": 262144
+}
+```
+
+`command-exec` 配置会依次查找：显式 `--config`、项目根目录的 `.chatgpt-mcp-bridge/config.json`、全局 `~/.chatgpt-mcp-bridge/config.json`。项目级配置优先于全局配置；也可以运行 `chatgpt-mcp-bridge config /path/to/project` 查看最终选中的路径和来源。`full-access` 不加载命令配置，同时传入 `--config` 会被拒绝；此模式的 `config`/`doctor` 输出会将命令配置路径、来源和存在状态标记为 `null`。
 
 所有 CLI 命令均可使用缩写 `cmb`，例如 `cmb config .`、`cmb doctor .` 或 `cmb serve /path/to/project`。
 
@@ -108,9 +121,15 @@ chatgpt-mcp-bridge serve /path/to/project \
   --transport stdio \
   --access command-exec \
   --config /path/to/config.json
+
+chatgpt-mcp-bridge serve /path/to/project \
+  --transport stdio \
+  --access full-access
 ```
 
-命令没有 OS/container 沙箱，会继承当前系统用户的文件与网络权限。即使 Bridge 使用参数数组和工作区 cwd，被允许的程序仍可能修改工作区外文件；只应配置你完全信任的命令。
+命令没有 OS/container 沙箱，会以当前系统用户身份运行并拥有相应的文件与网络权限。即使 Bridge 使用参数数组和工作区 cwd，被执行的程序仍可能修改工作区外文件；`full-access` 只应在可信机器和可信工作区中显式启用。该模式使用最小子进程环境，不会自动转发 Bridge 进程中的 Token 或其他任意环境变量。
+
+通过 HTTP 执行命令时，有效运行时间还受 HTTP 请求 deadline 限制（默认 30 秒）。客户端取消、连接中断或服务端 deadline 到期都会终止对应进程树并释放命令互斥队列；需要更长运行时间时优先使用 stdio，或由嵌入方显式提高 `HttpOptions.requestTimeoutMs`。
 
 ## ChatGPT 接入
 
@@ -118,7 +137,7 @@ chatgpt-mcp-bridge serve /path/to/project \
 
 Tunnel 与具体代码项目解耦：Tunnel 固定指向 `http://127.0.0.1:8765/mcp`，而 `--workspace` 决定当前暴露哪个本地仓库。切换项目时停止并重启 MCP Server 即可，不需要为每个仓库创建 Tunnel。
 
-不要用无认证隧道或把本地端口裸露到公网。只读模式的非 loopback bind 必须显式提供 `--allow-public-bind` 和 Bearer Token；写入/命令模式禁止 public bind。写入/命令模式使用 HTTP 时还必须提供至少 32 字符的 Token。
+不要用无认证隧道或把本地端口裸露到公网。只读模式的非 loopback bind 必须显式提供 `--allow-public-bind` 和 Bearer Token；写入、白名单命令及 `full-access` 模式禁止 public bind。这些模式使用 HTTP 时还必须提供至少 32 字符的 Token。
 
 ## Ignore 与敏感文件
 

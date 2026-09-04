@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,13 @@ describe('日志与 CLI', () => {
   it('日志不写正文、Token、绝对 workspace', async () => { const directory = await mkdtemp(path.join(tmpdir(), 'audit-test-')); const file = path.join(directory, 'audit.jsonl'); try { const logger = new AuditLogger('http', 'info', file); await logger.event('read_file', 'allow', 3, 20, undefined, 'src/a.ts'); const content = await readFile(file, 'utf8'); expect(content).not.toContain('SECRET-CONTENT'); expect(content).not.toContain('TOKEN'); expect(content).not.toContain('/Users/'); expect(content).toContain('src/a.ts'); } finally { await rm(directory, { recursive: true, force: true }); } });
   it('CLI 默认只监听 127.0.0.1:8765/mcp 且只读', () => expect(parseArgs(['serve', '.'])).toMatchObject({ host: '127.0.0.1', port: 8765, mcpPath: '/mcp', transport: 'http', access: 'read-only' }));
   it('CLI 解析显式访问模式和命令配置', () => expect(parseArgs(['serve', '.', '--access', 'command-exec', '--config', '/tmp/commands.json'])).toMatchObject({ access: 'command-exec', configPath: '/tmp/commands.json' }));
+  it('CLI 解析无需命令配置的 full-access', () => { const parsed = parseArgs(['serve', '.', '--access', 'full-access']); expect(parsed).toMatchObject({ access: 'full-access' }); expect(parsed).not.toHaveProperty('configPath'); });
+  it('CLI 拒绝 full-access 与命令配置同时使用', () => expect(() => parseArgs(['serve', '.', '--access', 'full-access', '--config', '/tmp/commands.json'])).toThrow(new AppError('INVALID_INPUT', 'full-access 不使用 --config')));
+  it('CLI config 与 doctor 将 full-access 的命令配置标记为不适用', () => {
+    const projectRoot = fileURLToPath(new URL('../..', import.meta.url)); const run = (command: 'config' | 'doctor'): Record<string, unknown> => JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', command, projectRoot, '--transport', 'stdio', '--access', 'full-access'], { cwd: projectRoot, encoding: 'utf8' })) as Record<string, unknown>;
+    expect(run('config')).toMatchObject({ access: 'full-access', configPath: null, configSource: null, configExists: null });
+    expect(run('doctor')).toMatchObject({ access: { mode: 'full-access', configPath: null, configSource: null, configExists: null } });
+  });
   it('CLI 兼容 pnpm 传入的 -- 分隔符', () => expect(parseArgs(['--', 'serve', '.'])).toMatchObject({ host: '127.0.0.1', port: 8765 }));
   it('CLI 用明确错误拒绝未知参数', () => expect(() => parseArgs(['serve', '.', '--run-command', 'id'])).toThrow(new AppError('INVALID_INPUT', '未知参数：--run-command')));
   it('CLI 用明确错误说明缺少 workspace', () => expect(() => parseArgs(['config'])).toThrow(new AppError('INVALID_INPUT', '缺少 workspace；请提供工作区路径，例如：chatgpt-mcp-bridge config .')));
@@ -32,6 +40,7 @@ describe('日志与 CLI', () => {
     expect(HELP_TEXT).toContain('chatgpt-mcp-bridge <command>');
     expect(HELP_TEXT).toContain('cmb <command>');
     expect(HELP_TEXT).toContain('~/.chatgpt-mcp-bridge/config.json');
+    expect(HELP_TEXT).toContain('full-access');
   });
   it('CLI 不会吞掉带额外参数的全局选项', () => expect(globalOptionOutput(['--help', 'serve'])).toBeUndefined());
   it('默认命令配置固定放在用户目录', () => expect(defaultCommandConfigPath()).toBe(path.join(homedir(), '.chatgpt-mcp-bridge', 'config.json')));

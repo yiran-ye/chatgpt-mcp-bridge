@@ -22,3 +22,15 @@
 显式启用 `command-exec` 后再增加：
 
 - `run_command`：选择用户配置中的命令 ID；声明为非只读、破坏性、非幂等、开放世界工具。非零退出和超时作为含 stdout/stderr 的结构化结果返回。
+
+显式启用 `full-access` 后同样增加 `apply_patch` 与 `run_command`，但 `run_command` 不使用命令白名单，输入为：
+
+- `executable`：PATH 中的程序名，或通过 `PathPolicy` 校验的 workspace 相对可执行文件；不接受绝对路径。
+- `args`：可选参数数组；不接受 shell 字符串，也不解析 shell 元字符。
+- `cwd`：可选 workspace 相对目录，默认 `.`。
+- `timeoutMs`：可选，默认 60000，最大 600000。
+- `maxOutputBytes`：可选，默认 262144，最大 1048576。
+
+`full-access` 子进程只继承最小环境。该模式没有 OS 沙箱，程序仍可能访问当前系统用户可访问的文件与网络。
+
+两种命令模式都会响应 MCP 取消信号。HTTP 传输下，命令还受请求 deadline 限制（默认 30 秒）；客户端取消、连接中断或 deadline 到期会终止进程树。工具参数中的更长 `timeoutMs` 不会覆盖 HTTP deadline。
