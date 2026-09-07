@@ -2,7 +2,7 @@
 
 ## 示例一：Review 未提交代码
 
-@LocalCode
+@chatgpt-mcp-bridge
 
 请 Review 当前项目的全部未提交修改。
 
@@ -29,7 +29,7 @@
 
 ## 示例二：复查 Codex 修改
 
-@LocalCode
+@chatgpt-mcp-bridge
 
 重新检查当前工作区修改。
 
@@ -44,7 +44,7 @@
 
 ## 示例三：分支 Review
 
-@LocalCode
+@chatgpt-mcp-bridge
 
 Review 当前分支相对于 origin/main 的全部修改。
 
@@ -54,7 +54,7 @@ Review 当前分支相对于 origin/main 的全部修改。
 
 ## 示例四：项目规划
 
-@LocalCode
+@chatgpt-mcp-bridge
 
 分析当前项目中与权限管理有关的实现。
 

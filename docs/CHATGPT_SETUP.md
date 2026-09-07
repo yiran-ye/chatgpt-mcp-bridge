@@ -96,7 +96,7 @@ Windows 或 Linux 用户可以使用系统 Secret Manager，或者每次只在�
 
 ### 4. 在 ChatGPT 创建连接
 
-在可用的 ChatGPT Plugins/Connectors 入口创建插件，连接方式选择 Tunnel，选择 `chatgpt-mcp-bridge`，身份验证选择“无身份验证”，建议将插件命名为 `LocalCode`。本地服务没有 OAuth；Tunnel 负责从 OpenAI 控制面到本机 MCP 的连接。
+在可用的 ChatGPT Plugins/Connectors 入口创建插件，连接方式选择 Tunnel，选择 `chatgpt-mcp-bridge`，身份验证选择“无身份验证”，建议将插件命名为 `chatgpt-mcp-bridge`。本地服务没有 OAuth；Tunnel 负责从 OpenAI 控制面到本机 MCP 的连接。
 
 Developer Mode、Plugins 或自定义 MCP 功能入口依赖账号、workspace、管理员策略和产品界面；不要假设一定可见，也不要声称个人 ChatGPT Pro 一定具备入口。
 

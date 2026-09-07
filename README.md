@@ -67,7 +67,7 @@ stdio 客户端配置示例：
 ```json
 {
   "mcpServers": {
-    "LocalCode": {
+    "chatgpt-mcp-bridge": {
       "command": "chatgpt-mcp-bridge",
       "args": ["serve", "--workspace", "/path/to/project", "--transport", "stdio"]
     }
