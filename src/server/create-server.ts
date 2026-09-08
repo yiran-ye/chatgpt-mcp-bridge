@@ -7,10 +7,14 @@ import { effectiveAccess } from '../runtime/access.js';
 import { PACKAGE_VERSION } from '../shared/version.js';
 import { AppError } from '../shared/errors.js';
 import { parseCommandConfig } from '../runtime/command-config.js';
+import { ToolCatalog } from './tool-catalog.js';
 
 export function createMcpServer(workspace: WorkspaceContext, logger?: AuditLogger, options?: BridgeOptions): McpServer {
   if (effectiveAccess(options) === 'full-access' && options?.commandConfig) throw new AppError('COMMAND_CONFIG_INVALID', 'full-access 不使用命令配置');
   const server = new McpServer({ name: 'chatgpt-mcp-bridge', version: PACKAGE_VERSION });
   const checkedOptions = options?.commandConfig ? { ...options, commandConfig: parseCommandConfig(options.commandConfig) } : options;
-  registerTools(server, workspace, logger, checkedOptions); return server;
+  const catalog = new ToolCatalog();
+  registerTools(catalog, workspace, logger, checkedOptions);
+  catalog.attach(server, workspace, checkedOptions, logger);
+  return server;
 }

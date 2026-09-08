@@ -15,12 +15,18 @@ export class PathPolicy {
     try { decoded = decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
     const candidate = path.resolve(this.root, decoded);
     if (!this.#inside(candidate)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '路径位于 workspace 之外');
+    try { await lstat(candidate); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('FILE_NOT_FOUND', '目标不存在');
+      throw new AppError('PATH_BLOCKED', '无法安全检查目标');
+    }
     let canonical: string;
-    try { canonical = await realpath(candidate); } catch { throw new AppError('FILE_NOT_FOUND', '目标不存在'); }
+    try { canonical = await realpath(candidate); } catch { throw new AppError('PATH_BLOCKED', '无法安全解析目标'); }
     if (!this.#inside(canonical)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '符号链接指向 workspace 之外');
     const relative = path.relative(this.root, canonical).replaceAll(path.sep, '/') || '.';
+    this.#assertAllowed(path.relative(this.root, candidate).replaceAll(path.sep, '/') || '.', options.allowIgnored, options.allowBridgeConfig);
     this.#assertAllowed(relative, options.allowIgnored, options.allowBridgeConfig);
-    const stat = await lstat(candidate);
+    const stat = await lstat(canonical);
     if (!options.allowDirectory && !stat.isFile()) throw new AppError('INVALID_INPUT', '目标不是普通文件');
     return { absolute: canonical, relative, stat };
   }

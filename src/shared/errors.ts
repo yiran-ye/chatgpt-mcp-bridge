@@ -5,7 +5,8 @@ export type ErrorCode =
   | 'SEARCH_TOOL_UNAVAILABLE' | 'OUTPUT_LIMIT_EXCEEDED' | 'INVALID_CURSOR'
   | 'UNAUTHORIZED' | 'ORIGIN_NOT_ALLOWED' | 'TIMEOUT' | 'INTERNAL_ERROR'
   | 'WRITE_DISABLED' | 'INVALID_PATCH' | 'PATCH_CONFLICT' | 'COMMAND_NOT_ALLOWED'
-  | 'COMMAND_CONFIG_INVALID' | 'COMMAND_FAILED';
+  | 'COMMAND_CONFIG_INVALID' | 'COMMAND_FAILED'
+  | 'MCP_CONFIG_INVALID' | 'MCP_SCHEMA_INVALID' | 'MCP_UPSTREAM_UNAVAILABLE' | 'MCP_UPSTREAM_FAILED';
 
 export class AppError extends Error {
   constructor(public readonly code: ErrorCode, message: string) { super(message); this.name = 'AppError'; }

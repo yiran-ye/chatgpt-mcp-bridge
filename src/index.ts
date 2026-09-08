@@ -7,3 +7,7 @@ export type { AccessMode, BridgeOptions, CommandConfig, CommandDefinition } from
 export { loadCommandConfig, resolveCommandConfigPath, defaultCommandConfigPath, parseCommandConfig } from './runtime/command-config.js';
 export type { CommandConfigResolution, CommandConfigSource } from './runtime/command-config.js';
 export { PACKAGE_VERSION } from './shared/version.js';
+export { McpProxyRuntime } from './mcp/proxy-runtime.js';
+export type { McpUpstreamSummary } from './mcp/proxy-runtime.js';
+export { loadMcpConfig, loadOptionalMcpConfig, parseMcpConfig, inspectMcpConfig, MCP_CONFIG_PATH } from './runtime/mcp-config.js';
+export type { McpConfig, McpServerDefinition, McpConfigSummary } from './runtime/mcp-config.js';

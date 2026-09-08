@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod/v4';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { BuiltinToolRegistrar } from './tool-catalog.js';
 import { COMMAND_ANNOTATIONS, READ_ONLY_ANNOTATIONS, WRITE_ANNOTATIONS } from '../shared/constants.js';
 import { AppError, safeError } from '../shared/errors.js';
 import type { WorkspaceContext } from '../workspace/workspace-context.js';
@@ -21,7 +21,7 @@ const outputSchema = { data: z.record(z.string(), z.unknown()).describe('结构�
 type ToolResult = { content: [{ type: 'text'; text: string }]; structuredContent?: { data: Record<string, unknown> }; isError?: boolean };
 type ToolExtra = { signal: AbortSignal };
 
-export function registerTools(server: McpServer, workspace: WorkspaceContext, logger?: AuditLogger, options?: BridgeOptions): void {
+export function registerTools(server: BuiltinToolRegistrar, workspace: WorkspaceContext, logger?: AuditLogger, options?: BridgeOptions): void {
   const git = new GitService(workspace); const files = new FileService(workspace); const search = new SearchService(workspace);
   const access = effectiveAccess(options); const coordinator = options?.mutationCoordinator ?? new MutationCoordinator();
   const commands = options?.commandConfig ? new CommandService(workspace, options.commandConfig, coordinator) : undefined;
@@ -42,7 +42,7 @@ export function registerTools(server: McpServer, workspace: WorkspaceContext, lo
   server.registerTool('workspace_info', { title: '工作区信息', description: '返回项目技术栈、Git、远程仓库脱敏摘要与顶层结构；不读取文件正文。', inputSchema: {}, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('workspace_info', async () => {
     const status = await git.status(); const names = await readdir(workspace.root); const remote = await remoteSummary(git); const languages = detectLanguages(names);
     const commandPolicy = access === 'full-access' ? 'unrestricted' : access === 'command-exec' ? 'allowlist' : 'none';
-    return { workspaceName: workspace.name, repositoryName: remote.slug ?? workspace.name, branch: status.branch, head: status.head, remote, hasPackageJson: names.includes('package.json'), hasPomXml: names.includes('pom.xml'), hasGradle: names.includes('build.gradle') || names.includes('build.gradle.kts'), hasPyproject: names.includes('pyproject.toml'), hasGoMod: names.includes('go.mod'), languages, topLevel: names.filter(name => name !== '.git' && !isSensitive(name)).slice(0, 100), isDirty: status.files.length > 0, commands: commands?.summaries() ?? [], security: { access, readOnly: access === 'read-only', commandPolicy, sensitiveFilesBlocked: true, workspaceContained: true, networkDisabledForTools: access !== 'command-exec' && access !== 'full-access' } };
+    return { workspaceName: workspace.name, repositoryName: remote.slug ?? workspace.name, branch: status.branch, head: status.head, remote, hasPackageJson: names.includes('package.json'), hasPomXml: names.includes('pom.xml'), hasGradle: names.includes('build.gradle') || names.includes('build.gradle.kts'), hasPyproject: names.includes('pyproject.toml'), hasGoMod: names.includes('go.mod'), languages, topLevel: names.filter(name => name !== '.git' && !isSensitive(name)).slice(0, 100), isDirty: status.files.length > 0, commands: commands?.summaries() ?? [], mcp: { enabled: Boolean(options?.mcpProxy), servers: options?.mcpProxy?.summaries() ?? [] }, security: { access, readOnly: access === 'read-only' && !options?.mcpProxy, commandPolicy, sensitiveFilesBlocked: !options?.mcpProxy, workspaceContained: !options?.mcpProxy, networkDisabledForTools: access !== 'command-exec' && access !== 'full-access' && !options?.mcpProxy, localToolsReadOnly: access === 'read-only' } };
   }) as never);
   server.registerTool('workspace_instructions', { title: '项目指令', description: '按优先级读取根目录 AGENTS.override.md、AGENTS.md、agents.md，支持分页。', inputSchema: { cursor: z.string().optional(), maxBytes: z.number().int().min(1024).max(131072).default(65536) }, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('workspace_instructions', async (input: { cursor?: string; maxBytes: number }) => {
     const found: Array<{ path: string; priority: number; content: string }> = []; for (const [priority, name] of ['AGENTS.override.md', 'AGENTS.md', 'agents.md'].entries()) try { const absolute = path.join(workspace.root, name); if ((await stat(absolute)).size > 1024 * 1024) continue; const content = await readFile(absolute, 'utf8'); found.push({ path: name, priority: 3 - priority, content }); } catch { /* absent */ }

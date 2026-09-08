@@ -8,6 +8,8 @@
 
 默认模式没有写文件、删除文件、命令执行或网络访问。可写模式仍不提供浏览器控制、Computer Use、Codex Skill、C2C 或 Agent 编排。
 
+项目配置中的其他 MCP 服务会在启动时自动加载，ChatGPT 通过三个固定网关工具发现和调用它们。
+
 ## 安装
 
 需要 Node.js 20+、Git，推荐安装 ripgrep。推荐直接从 npm 全局安装：
@@ -130,6 +132,19 @@ chatgpt-mcp-bridge serve /path/to/project \
 命令没有 OS/container 沙箱，会以当前系统用户身份运行并拥有相应的文件与网络权限。即使 Bridge 使用参数数组和工作区 cwd，被执行的程序仍可能修改工作区外文件；`full-access` 只应在可信机器和可信工作区中显式启用。该模式使用最小子进程环境，不会自动转发 Bridge 进程中的 Token 或其他任意环境变量。
 
 通过 HTTP 执行命令时，有效运行时间还受 HTTP 请求 deadline 限制（默认 30 秒）。客户端取消、连接中断或服务端 deadline 到期都会终止对应进程树并释放命令互斥队列；需要更长运行时间时优先使用 stdio，或由嵌入方显式提高 `HttpOptions.requestTimeoutMs`。
+
+## 项目级 MCP 服务
+
+在项目的 `.chatgpt-mcp-bridge/mcp.json` 中添加 `version: 1` 和 `mcpServers`。支持 `command`/`args` 启动的 stdio 服务，以及通过 `url` 连接的 Streamable HTTP 服务；认证头和环境变量可以引用 `${env:变量名}`。
+
+```bash
+cmb serve /path/to/project
+cmb serve /path/to/project --transport stdio
+```
+
+HTTP 代理需要 loopback 监听及至少 32 字符的 Bearer Token，可通过 `CHATGPT_MCP_BRIDGE_TOKEN` 设置。有配置即自动连接或启动上游，无需 `--enable-mcp`。配置授权上游全部工具，`--access` 继续控制内置工具。
+
+ChatGPT 始终看到 `mcp_list_servers`、`mcp_list_tools`、`mcp_call_tool` 三个入口；未配置时服务目录为空。迁移时刷新一次插件，此后增删服务或修改工具参数只需重启 Bridge，无需刷新插件。配置示例、诊断方式和安全边界见 [docs/MCP_PROXY.md](docs/MCP_PROXY.md)。
 
 ## ChatGPT 接入
 

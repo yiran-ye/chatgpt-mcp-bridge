@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createFixture, type GitFixture } from '../helpers/git-fixture.js';
@@ -21,5 +21,28 @@ describe('PathPolicy 与 FileService', () => {
   it('MCP 数据面不能读取项目级 Bridge 配置', async () => expect(service.read({ path: '.chatgpt-mcp-bridge/config.json' })).rejects.toMatchObject({ code: 'PATH_BLOCKED' }));
   it.each(['../outside.txt', '../../.ssh/id_rsa', '/etc/passwd', '%2e%2e/outside.txt'])('拒绝 traversal %s', async path => expect(service.read({ path })).rejects.toMatchObject({ code: 'PATH_OUTSIDE_WORKSPACE' }));
   it('拒绝越界 symlink', async () => expect(service.read({ path: 'escape-link' })).rejects.toMatchObject({ code: 'PATH_OUTSIDE_WORKSPACE' }));
+  it('工作区内文件和目录链接使用目标元数据及规范化路径', async () => {
+    await symlink('tracked.ts', path.join(fixture.root, 'inside-file-link'));
+    await mkdir(path.join(fixture.root, 'link-directory-target'));
+    await symlink('link-directory-target', path.join(fixture.root, 'inside-directory-link'));
+    const workspace = await WorkspaceContext.create(fixture.root);
+    const target = await workspace.paths.resolve('tracked.ts');
+    const linked = await workspace.paths.resolve('inside-file-link');
+    expect(linked.relative).toBe('tracked.ts'); expect(linked.stat.isFile()).toBe(true);
+    expect(linked.stat.size).toBe(target.stat.size); expect(linked.stat.ino).toBe(target.stat.ino);
+    expect((await service.read({ path: 'inside-file-link' }))['content']).toContain('export');
+    expect((await workspace.paths.resolve('inside-directory-link', { allowDirectory: true })).stat.isDirectory()).toBe(true);
+  });
+  it('链接不能绕过目标的敏感、ignore、配置和文件大小限制', async () => {
+    for (const [target, code] of [['.env', 'SENSITIVE_FILE'], ['ignored.txt', 'PATH_BLOCKED'], ['.chatgpt-mcp-bridge/config.json', 'PATH_BLOCKED'], ['large.txt', 'FILE_TOO_LARGE'], ['missing-target', 'PATH_BLOCKED']]) {
+      const name = 'link-to-' + String(code) + '-' + path.basename(String(target));
+      await symlink(String(target), path.join(fixture.root, name));
+      await expect(service.read({ path: name })).rejects.toMatchObject({ code });
+    }
+  });
+  it('受保护的链接名称不能指向普通文件以绕过路径策略', async () => {
+    await symlink('../tracked.ts', path.join(fixture.root, '.chatgpt-mcp-bridge', 'ordinary-link'));
+    await expect(service.read({ path: '.chatgpt-mcp-bridge/ordinary-link' })).rejects.toMatchObject({ code: 'PATH_BLOCKED' });
+  });
   it('目录列表不暴露绝对路径并标记阻止项', async () => { const result = await service.list({ depth: 1 }); expect(JSON.stringify(result)).not.toContain(fixture.root); expect(result['entries']).toEqual(expect.arrayContaining([expect.objectContaining({ path: '.env', readable: false })])); });
 });

@@ -1,6 +1,6 @@
 # MCP Tools
 
-默认十个工具声明 `readOnlyHint=true`、`destructiveHint=false`、`idempotentHint=true`、`openWorldHint=false`。输入由 Zod 校验，返回 `structuredContent.data` 和模型可读 JSON 文本。
+默认注册十个内置只读工具和三个固定 MCP 网关。以下十个内置工具声明 `readOnlyHint=true`、`destructiveHint=false`、`idempotentHint=true`、`openWorldHint=false`。输入由 Zod 校验，返回 `structuredContent.data` 和模型可读 JSON 文本。
 
 - `change_context`：Review 第一入口，汇总改动、统计与指令文件。
 - `workspace_info`：项目、语言、顶层结构、Git 与 remote 脱敏摘要。
@@ -34,3 +34,19 @@
 `full-access` 子进程只继承最小环境。该模式没有 OS 沙箱，程序仍可能访问当前系统用户可访问的文件与网络。
 
 两种命令模式都会响应 MCP 取消信号。HTTP 传输下，命令还受请求 deadline 限制（默认 30 秒）；客户端取消、连接中断或 deadline 到期会终止进程树。工具参数中的更长 `timeoutMs` 不会覆盖 HTTP deadline。
+
+## 上游 MCP 工具
+
+三个固定入口始终存在，无需 `--enable-mcp`。项目非空有效配置在启动时自动加载，未配置时服务目录为空。
+
+| 工具 | 输入 | 结果 |
+|---|---|---|
+| `mcp_list_servers` | `{}` | `{enabled, servers}`，包含服务 ID、状态、工具数和安全错误码 |
+| `mcp_list_tools` | `{serverId, cursor?}` | `{serverId, tools, nextCursor?}`，保留原始名称及输入／输出 Schema、说明、注解 |
+| `mcp_call_tool` | `{serverId, toolName, arguments?}` | 原生 `content`、`structuredContent` 和 `isError` |
+
+`arguments` 必须是 JSON 对象，省略时使用 `{}`。网关结果不使用内置工具的 `structuredContent.data` 包装。两个查询入口只读；调用入口固定声明非只读、可能有破坏性、非幂等及开放世界。上游 annotations 仅作为目录数据返回。
+
+`mcp_list_tools` 每页最多 100 个工具、完整结果最多 1 MiB，签名 `nextCursor` 绑定工作区、服务和目录内容。插件的 `tools/list` 不随上游配置或目录变化。配置和上游目录在启动时固定，变更后重启 Bridge 即可；迁移到固定入口时刷新一次插件。`workspace_info.mcp` 返回代理是否启用及各服务的状态和工具数；开启代理时整体 `security.readOnly` 为 false，`localToolsReadOnly` 反映内置工具权限。
+
+上游参数由 Zod 校验容器并由 Ajv 校验 Schema；不转换参数或补默认值。Bridge 错误使用 `isError: true` 和安全错误码，包含 `MCP_CONFIG_INVALID`、`MCP_SCHEMA_INVALID`、`MCP_UPSTREAM_UNAVAILABLE`、`MCP_UPSTREAM_FAILED`、`TIMEOUT`、`OUTPUT_LIMIT_EXCEEDED`。更多限制见 [MCP_PROXY.md](MCP_PROXY.md)。

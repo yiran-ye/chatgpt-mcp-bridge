@@ -20,9 +20,12 @@ export interface BridgeOptions {
   commandConfig?: CommandConfig;
   mutationCoordinator?: MutationCoordinator;
   abortSignal?: AbortSignal;
+  /** Explicitly initialized upstreams. The service transport owns shutdown, not individual requests. */
+  mcpProxy?: McpProxyRuntime;
 }
 
 export function effectiveAccess(options?: BridgeOptions): AccessMode {
   return options?.access ?? 'read-only';
 }
 import type { MutationCoordinator } from '../security/mutation-coordinator.js';
+import type { McpProxyRuntime } from '../mcp/proxy-runtime.js';
