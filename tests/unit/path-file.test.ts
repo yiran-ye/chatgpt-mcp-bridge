@@ -21,6 +21,13 @@ describe('PathPolicy 与 FileService', () => {
   it('MCP 数据面不能读取项目级 Bridge 配置', async () => expect(service.read({ path: '.chatgpt-mcp-bridge/config.json' })).rejects.toMatchObject({ code: 'PATH_BLOCKED' }));
   it.each(['../outside.txt', '../../.ssh/id_rsa', '/etc/passwd', '%2e%2e/outside.txt'])('拒绝 traversal %s', async path => expect(service.read({ path })).rejects.toMatchObject({ code: 'PATH_OUTSIDE_WORKSPACE' }));
   it('拒绝越界 symlink', async () => expect(service.read({ path: 'escape-link' })).rejects.toMatchObject({ code: 'PATH_OUTSIDE_WORKSPACE' }));
+  it('仅将安全目录下的缺失目标判为不存在', async () => {
+    const workspace = await WorkspaceContext.create(fixture.root);
+    await expect(workspace.paths.resolve('missing-parent/nested/file')).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    await expect(workspace.paths.resolve('tracked.ts/nested/file')).rejects.toMatchObject({ code: 'PATH_BLOCKED' });
+    await symlink('missing-parent-target', path.join(fixture.root, 'dangling-parent'));
+    await expect(workspace.paths.resolve('dangling-parent/nested/file')).rejects.toMatchObject({ code: 'PATH_BLOCKED' });
+  });
   it('工作区内文件和目录链接使用目标元数据及规范化路径', async () => {
     await symlink('tracked.ts', path.join(fixture.root, 'inside-file-link'));
     await mkdir(path.join(fixture.root, 'link-directory-target'));

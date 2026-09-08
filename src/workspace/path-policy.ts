@@ -17,7 +17,10 @@ export class PathPolicy {
     if (!this.#inside(candidate)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '路径位于 workspace 之外');
     try { await lstat(candidate); }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('FILE_NOT_FOUND', '目标不存在');
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        await this.#checkMissingAncestors(candidate);
+        throw new AppError('FILE_NOT_FOUND', '目标不存在');
+      }
       throw new AppError('PATH_BLOCKED', '无法安全检查目标');
     }
     let canonical: string;
@@ -39,6 +42,24 @@ export class PathPolicy {
     if (!this.#inside(parent)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '目标父目录位于 workspace 之外');
     try { await lstat(candidate); throw new AppError('INVALID_INPUT', '创建目标已存在'); } catch (error) { if (error instanceof AppError) throw error; if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError('PATH_BLOCKED', '无法安全检查创建目标'); }
     return { absolute: path.join(parent, path.basename(candidate)), relative };
+  }
+  async #checkMissingAncestors(candidate: string): Promise<void> {
+    // Windows can report ENOENT when an ancestor is a file rather than a directory.
+    let ancestor = path.dirname(candidate);
+    while (this.#inside(ancestor)) {
+      try { await lstat(ancestor); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || ancestor === this.root) throw new AppError('PATH_BLOCKED', '无法安全检查父目录');
+        ancestor = path.dirname(ancestor);
+        continue;
+      }
+      let canonical: string;
+      try { canonical = await realpath(ancestor); } catch { throw new AppError('PATH_BLOCKED', '无法安全解析父目录'); }
+      if (!this.#inside(canonical)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '父目录符号链接指向 workspace 之外');
+      try { if ((await lstat(canonical)).isDirectory()) return; } catch { /* Reject inaccessible ancestors below. */ }
+      throw new AppError('PATH_BLOCKED', '目标父路径不是可访问目录');
+    }
+    throw new AppError('PATH_BLOCKED', '无法安全检查父目录');
   }
   #decode(input: string): string {
     if (path.isAbsolute(input) || input.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
