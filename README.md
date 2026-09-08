@@ -129,7 +129,9 @@ chatgpt-mcp-bridge serve /path/to/project \
   --access full-access
 ```
 
-命令没有 OS/container 沙箱，会以当前系统用户身份运行并拥有相应的文件与网络权限。即使 Bridge 使用参数数组和工作区 cwd，被执行的程序仍可能修改工作区外文件；`full-access` 只应在可信机器和可信工作区中显式启用。该模式使用最小子进程环境，不会自动转发 Bridge 进程中的 Token 或其他任意环境变量。
+命令没有 OS/container 沙箱，会以当前系统用户身份运行并拥有相应的文件与网络权限。即使 Bridge 使用参数数组和工作区 cwd，被执行的程序仍可能修改工作区外文件；`full-access` 只应在可信机器和可信工作区中显式启用。该模式完整继承 Bridge 进程的环境变量，包括 `PATH`、`HOME`、`JAVA_HOME`、代理、工具配置及 Token 等凭据。程序主动打印的环境值可能出现在命令结果中，不会按全部环境值自动脱敏；审计日志仍只记录元数据。`command-exec` 继续使用最小环境和配置中的 `forwardEnv`。
+
+运行 `npm`、`mvn` 或项目内的 `./mvnw` 前，应确保启动 Bridge 的环境已包含工具所需的 `PATH`、`HOME`、`JAVA_HOME` 等变量。Bridge 不自动加载 `.zshrc`、安装工具或补造缺失变量。升级后运行更新的 Bridge 构建并重启，现有 `--access full-access` profile 无需新增配置；Windows 的 `.cmd`／`.bat` 启动器仍不通过 shell 执行。
 
 通过 HTTP 执行命令时，有效运行时间还受 HTTP 请求 deadline 限制（默认 30 秒）。客户端取消、连接中断或服务端 deadline 到期都会终止对应进程树并释放命令互斥队列；需要更长运行时间时优先使用 stdio，或由嵌入方显式提高 `HttpOptions.requestTimeoutMs`。
 

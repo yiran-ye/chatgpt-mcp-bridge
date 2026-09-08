@@ -57,7 +57,7 @@ tunnel-client run --profile chatgpt-mcp-bridge-write
 
 `command-exec` 在 `--mcp-command` 中加入 `--access command-exec`。配置会优先读取项目根目录的 `.chatgpt-mcp-bridge/config.json`，不存在时回退到全局 `~/.chatgpt-mcp-bridge/config.json`；也可以通过 `--config /absolute/path/config.json` 显式覆盖。
 
-无需 executable 白名单时可改用 `--access full-access`。该模式不使用 `--config`，调用方直接向 `run_command` 提交 executable 与参数数组；它不会解析 shell 字符串，但执行的程序仍拥有当前系统用户的文件与网络权限，只适用于可信环境。
+无需 executable 白名单时可改用 `--access full-access`。该模式不使用 `--config`，调用方直接向 `run_command` 提交 executable 与参数数组；子进程完整继承 Bridge 的环境，包括 `HOME`、`JAVA_HOME` 及 Token 等凭据，命令结果可能包含程序打印的环境值。它不会解析 shell 字符串，但执行的程序仍拥有当前系统用户的文件与网络权限，只适用于可信环境。确保启动 Bridge 时已设置工具所需环境；Bridge 不自动加载 `.zshrc`。升级并重启更新后的 Bridge 即可生效，profile 无需新增配置。
 
 例如，假设复制到的 Key 是 `example-runtime-key`，对应命令就是
 `export CONTROL_PLANE_API_KEY='example-runtime-key'`。单引号需要保留，但不要保留

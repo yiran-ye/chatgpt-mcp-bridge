@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createFixture, type GitFixture } from '../helpers/git-fixture.js';
@@ -11,7 +11,7 @@ import type { CommandConfig } from '../../src/runtime/access.js';
 describe('写入与命令安全边界', () => {
   let fixture: GitFixture; let workspace: WorkspaceContext; let patches: PatchService;
   beforeEach(async () => { fixture = await createFixture(); workspace = await WorkspaceContext.create(fixture.root); patches = new PatchService(workspace, new MutationCoordinator()); });
-  afterEach(async () => fixture.cleanup());
+  afterEach(async () => { vi.unstubAllEnvs(); await fixture.cleanup(); });
 
   it('创建、更新和删除文件并校验哈希', async () => {
     await patches.apply({ operation: 'create_file', path: 'created.txt', diff: '--- /dev/null\n+++ b/created.txt\n@@ -0,0 +1 @@\n+hello\n' });
@@ -66,14 +66,37 @@ describe('写入与命令安全边界', () => {
     } finally { Reflect.deleteProperty(process.env, envName); }
   });
 
-  it('full-access 直接运行 PATH executable、隔离环境且不解析 shell 元字符', async () => {
+  it('command-exec 默认隔离未放行的环境变量', async () => {
+    const envName = 'CHATGPT_MCP_BRIDGE_TEST_SECRET'; vi.stubEnv(envName, 'not-forwarded');
+    const config: CommandConfig = { version: 1, commands: { env: { description: '检查环境隔离', executable: process.execPath, fixedArgs: ['-e', `process.stdout.write(String(process.env.${envName} === undefined))`], allowAdditionalArgs: false, forwardEnv: [], timeoutMs: 5000, maxOutputBytes: 4096 } } };
+    expect(await new CommandService(workspace, config, new MutationCoordinator()).run({ commandId: 'env' })).toMatchObject({ ok: true, stdout: 'true' });
+  });
+
+  it('full-access 直接运行 PATH executable、继承环境且不解析 shell 元字符', async () => {
     const envName = 'CHATGPT_MCP_BRIDGE_FULL_ACCESS_SECRET'; process.env[envName] = 'full-access-secret-value';
     try {
       const commands = new FullAccessCommandService(workspace, new MutationCoordinator()); const marker = '; touch full-access-should-not-exist';
       const result = await commands.run({ executable: path.basename(process.execPath), args: ['-e', `process.stdout.write((process.argv[1] ?? '') + '|' + (process.env.${envName} ?? ''))`, marker] });
-      expect(result).toMatchObject({ ok: true, executable: path.basename(process.execPath), stdout: `${marker}|`, timedOut: false });
+      expect(result).toMatchObject({ ok: true, executable: path.basename(process.execPath), stdout: `${marker}|full-access-secret-value`, timedOut: false });
       await expect(readFile(path.join(fixture.root, 'full-access-should-not-exist'))).rejects.toThrow();
     } finally { Reflect.deleteProperty(process.env, envName); }
+  });
+
+  it('full-access 继承 HOME、JAVA_HOME 和 Token，保留空值与缺失状态', async () => {
+    const values = { HOME: 'bridge-test-home', JAVA_HOME: 'bridge-test-java-home', CHATGPT_MCP_BRIDGE_TOKEN: 'bridge-test-token', CHATGPT_MCP_BRIDGE_TEST_EMPTY: '' };
+    for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);
+    vi.stubEnv('CHATGPT_MCP_BRIDGE_TEST_MISSING', undefined);
+    const script = `process.stdout.write(JSON.stringify({ values: Object.fromEntries(${JSON.stringify(Object.keys(values))}.map(name => [name, process.env[name]])), missing: process.env.CHATGPT_MCP_BRIDGE_TEST_MISSING === undefined }))`;
+    const result = await new FullAccessCommandService(workspace, new MutationCoordinator()).run({ executable: path.basename(process.execPath), args: ['-e', script] });
+    expect(result).toMatchObject({ ok: true });
+    expect(JSON.parse(result['stdout'] as string)).toEqual({ values, missing: true });
+  });
+
+  it.skipIf(process.platform === 'win32')('full-access 支持严格模式 wrapper 读取 HOME 和 JAVA_HOME', async () => {
+    vi.stubEnv('HOME', 'bridge-test-home'); vi.stubEnv('JAVA_HOME', 'bridge-test-java-home');
+    const executable = path.join(fixture.root, 'test-mvnw');
+    await writeFile(executable, '#!/bin/sh\nset -eu\n[ "$HOME" = "bridge-test-home" ]\n[ "$JAVA_HOME" = "bridge-test-java-home" ]\nprintf "wrapper-started"\n'); await chmod(executable, 0o755);
+    expect(await new FullAccessCommandService(workspace, new MutationCoordinator()).run({ executable: './test-mvnw' })).toMatchObject({ ok: true, stdout: 'wrapper-started' });
   });
 
   it.skipIf(process.platform === 'win32')('full-access 运行经过 PathPolicy 的工作区相对 executable', async () => {

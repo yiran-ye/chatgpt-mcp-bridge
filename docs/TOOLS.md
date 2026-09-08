@@ -31,7 +31,7 @@
 - `timeoutMs`：可选，默认 60000，最大 600000。
 - `maxOutputBytes`：可选，默认 262144，最大 1048576。
 
-`full-access` 子进程只继承最小环境。该模式没有 OS 沙箱，程序仍可能访问当前系统用户可访问的文件与网络。
+`full-access` 子进程完整继承 Bridge 进程环境，包括 `HOME`、`JAVA_HOME`、工具配置及 Token 等凭据；无需额外环境参数。命令结果可能包含程序主动打印的环境值，不会按全部环境值自动脱敏。该模式没有 OS 沙箱，程序仍可能访问当前系统用户可访问的文件与网络。`command-exec` 继续使用最小环境和显式 `forwardEnv`。
 
 两种命令模式都会响应 MCP 取消信号。HTTP 传输下，命令还受请求 deadline 限制（默认 30 秒）；客户端取消、连接中断或 deadline 到期会终止进程树。工具参数中的更长 `timeoutMs` 不会覆盖 HTTP deadline。
 

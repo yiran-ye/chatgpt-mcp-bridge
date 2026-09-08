@@ -26,7 +26,7 @@ export class CommandService {
       if (!cwd.stat.isDirectory()) throw new AppError('INVALID_INPUT', '命令 cwd 不是目录');
       const executable = await resolveExecutable(definition.executable);
       const timeoutMs = Math.min(input.timeoutMs ?? definition.timeoutMs, definition.timeoutMs, MAX_TIMEOUT_MS);
-      return await execute(executable, [...definition.fixedArgs, ...extra], cwd.absolute, timeoutMs, Math.min(definition.maxOutputBytes, HARD_OUTPUT), definition.forwardEnv, this.workspace.root, { commandId: input.commandId }, signal);
+      return await execute(executable, [...definition.fixedArgs, ...extra], cwd.absolute, timeoutMs, Math.min(definition.maxOutputBytes, HARD_OUTPUT), minimalEnv(definition.forwardEnv), definition.forwardEnv, this.workspace.root, { commandId: input.commandId }, signal);
     });
   }
 }
@@ -44,7 +44,7 @@ export class FullAccessCommandService {
       const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS; const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_OUTPUT_BYTES;
       if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new AppError('INVALID_INPUT', '命令 timeoutMs 无效');
       if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < MIN_OUTPUT_BYTES || maxOutputBytes > HARD_OUTPUT) throw new AppError('INVALID_INPUT', '命令 maxOutputBytes 无效');
-      return await execute(executable.absolute, args, cwd.absolute, timeoutMs, maxOutputBytes, [], this.workspace.root, { executable: executable.display }, signal);
+      return await execute(executable.absolute, args, cwd.absolute, timeoutMs, maxOutputBytes, { ...process.env }, [], this.workspace.root, { executable: executable.display }, signal);
     });
   }
 }
@@ -81,9 +81,9 @@ function minimalEnv(forwardEnv: string[]): NodeJS.ProcessEnv {
   for (const name of names) if (process.env[name] !== undefined) env[name] = process.env[name];
   return env;
 }
-async function execute(executable: string, args: string[], cwd: string, timeoutMs: number, maxBytes: number, forwardEnv: string[], workspaceRoot: string, identity: { commandId?: string; executable?: string }, signal?: AbortSignal): Promise<Record<string, unknown>> {
+async function execute(executable: string, args: string[], cwd: string, timeoutMs: number, maxBytes: number, env: NodeJS.ProcessEnv, forwardEnv: string[], workspaceRoot: string, identity: { commandId?: string; executable?: string }, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return await new Promise((resolve, reject) => {
-    const started = Date.now(); const child = spawn(executable, args, { cwd, env: minimalEnv(forwardEnv), shell: false, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    const started = Date.now(); const child = spawn(executable, args, { cwd, env, shell: false, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout: Buffer = Buffer.alloc(0); let stderr: Buffer = Buffer.alloc(0); let truncated = false; let timedOut = false; let cancelled = false; let terminationRequested = false;
     const append = (current: Buffer, chunk: Buffer): Buffer => { const remaining = Math.max(0, maxBytes - stdout.length - stderr.length); if (chunk.length > remaining) truncated = true; return remaining === 0 ? current : Buffer.concat([current, chunk.subarray(0, remaining)]); };
     child.stdout.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk); }); child.stderr.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk); });

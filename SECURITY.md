@@ -18,7 +18,7 @@
 - 敏感路径、ignore、`.git` 和 `.chatgpt-mcp-bridge-ignore` 对直接读写始终阻止；新文件还会验证真实父目录，避免符号链接逃逸。
 - `command-exec` 下的 `run_command` 只能选择启动时加载配置中的命令 ID。模型不能覆盖 executable、固定参数、环境变量、超时或输出上限。
 - `full-access` 是显式例外：无需白名单即可提交 executable 与参数数组，但仍使用 `shell=false`；PATH 程序名之外的 executable 必须是经 `PathPolicy` 校验的 workspace 相对路径，绝对路径、敏感路径、ignore 路径和越界符号链接会被拒绝。
-- `full-access` 子进程仅获得最小环境，不自动继承 Bridge 进程中的 Token 或其他任意环境变量。
+- `full-access` 子进程完整继承 Bridge 进程环境，包括 Token 等凭据；命令结果可能包含程序主动打印的环境值，不会按全部环境值自动脱敏。审计日志仍只记录元数据。`command-exec` 继续使用最小环境和显式 `forwardEnv`，显式转发值继续脱敏。
 - 命令同时监听 MCP 取消信号与 HTTP 请求生命周期；客户端取消、断连或 HTTP deadline 到期时会终止整个进程树，避免失联命令继续后台运行并占用互斥队列。
 - 命令执行不是系统沙箱。被执行的程序具有当前 OS 用户的权限和潜在网络能力，也可能间接访问受保护路径；`command-exec`、`full-access` 与宿主的免审批模式只能用于可信工作区。
 
