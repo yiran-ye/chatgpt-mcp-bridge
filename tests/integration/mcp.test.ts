@@ -35,7 +35,7 @@ describe('MCP 协议集成', () => {
     try { const client = new Client({ name: 'http-test', version: '1' }); await client.connect(new StreamableHTTPClientTransport(new URL(running.url)) as unknown as Parameters<typeof client.connect>[0]); expect((await client.listTools()).tools).toHaveLength(13); expect((await client.callTool({ name: 'git_status', arguments: {} })).isError).not.toBe(true); await client.close(); } finally { await running.close(); }
   });
   it('按访问模式注册写入和命令工具并正确标注', async () => {
-    for (const [access, count] of [['workspace-write', 14], ['command-exec', 15], ['full-access', 15]] as const) {
+    for (const [access, count] of [['workspace-write', 15], ['command-exec', 16], ['full-access', 16]] as const) {
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const server = createMcpServer(workspace, undefined, { access, ...(access === 'command-exec' ? { commandConfig } : {}) }); const client = new Client({ name: 'write-test', version: '1' });
       await server.connect(serverTransport as unknown as Parameters<typeof server.connect>[0]); await client.connect(clientTransport as unknown as Parameters<typeof client.connect>[0]);
       const tools = (await client.listTools()).tools; expect(tools).toHaveLength(count); expect(tools.find(tool => tool.name === 'apply_patch')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, openWorldHint: false });
@@ -93,7 +93,7 @@ describe('MCP 协议集成', () => {
     const client = new Client({ name: 'stdio-full-access-test', version: '1' });
     const transport = new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/cli.ts', 'serve', '--workspace', fixture.root, '--transport', 'stdio', '--access', 'full-access'], env: { PATH: process.env['PATH'] ?? '', ...values }, stderr: 'pipe' });
     try {
-      await client.connect(transport as unknown as Parameters<typeof client.connect>[0]); expect((await client.listTools()).tools).toHaveLength(15);
+      await client.connect(transport as unknown as Parameters<typeof client.connect>[0]); expect((await client.listTools()).tools).toHaveLength(16);
       const script = `process.stdout.write(JSON.stringify(Object.fromEntries(${JSON.stringify(Object.keys(values))}.map(name => [name, process.env[name]]))))`;
       const result = await client.callTool({ name: 'run_command', arguments: { executable: path.basename(process.execPath), args: ['-e', script] } });
       expect(result.isError).not.toBe(true); expect(result.structuredContent).toMatchObject({ data: { ok: true, stdout: JSON.stringify(values) } });

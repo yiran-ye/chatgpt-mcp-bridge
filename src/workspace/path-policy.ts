@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { lstat, realpath } from 'node:fs/promises';
+import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { AppError } from '../shared/errors.js';
 import { isSensitive } from './sensitive-file-policy.js';
 import type { IgnorePolicy } from './ignore-policy.js';
@@ -40,8 +40,46 @@ export class PathPolicy {
     let parent: string;
     try { parent = await realpath(path.dirname(candidate)); } catch { throw new AppError('FILE_NOT_FOUND', '目标父目录不存在'); }
     if (!this.#inside(parent)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '目标父目录位于 workspace 之外');
+    this.#assertAllowed(path.relative(this.root, path.join(parent, path.basename(candidate))).replaceAll(path.sep, '/'), false);
     try { await lstat(candidate); throw new AppError('INVALID_INPUT', '创建目标已存在'); } catch (error) { if (error instanceof AppError) throw error; if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError('PATH_BLOCKED', '无法安全检查创建目标'); }
     return { absolute: path.join(parent, path.basename(candidate)), relative };
+  }
+  /** Attachment creation validates every lexical and canonical ancestor, including missing directories. */
+  async resolveForAttachment(input: string, createParents = false, signal?: AbortSignal): Promise<CreatablePath> {
+    const decoded = this.#decode(input);
+    if (decoded.includes('\\') || decoded.includes(':') || decoded.split('/').includes('..')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '附件路径必须是工作区内的相对路径');
+    const parts = decoded.split('/');
+    if (parts.some(part => !part || part === '.' || /[. ]$/u.test(part) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(part))) throw new AppError('INVALID_INPUT', '附件路径包含不支持的名称');
+    for (let i = 1; i <= parts.length; i++) this.#assertAllowed(parts.slice(0, i).join('/'));
+    let current = this.root;
+    for (let i = 0; i < parts.length; i++) {
+      signal?.throwIfAborted();
+      const part = parts[i]; if (part === undefined) throw new AppError('INVALID_INPUT', '附件路径无效');
+      const candidate = path.join(current, part);
+      this.#assertAllowed(path.relative(this.root, candidate).replaceAll(path.sep, '/'));
+      let info;
+      try { info = await lstat(candidate); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError('PATH_BLOCKED', '无法检查附件路径'); }
+      if (i === parts.length - 1) {
+        if (info) throw new AppError('FILE_CONFLICT', '目标已存在，请选择其他文件名');
+        return { absolute: candidate, relative: path.relative(this.root, candidate).replaceAll(path.sep, '/') };
+      }
+      if (!info) {
+        if (!createParents) { current = candidate; continue; }
+        signal?.throwIfAborted();
+        try { await mkdir(candidate, { mode: 0o755 }); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new AppError('PATH_BLOCKED', '无法创建附件父目录'); }
+      }
+      let canonical: string;
+      try { canonical = await realpath(candidate); } catch { throw new AppError('PATH_BLOCKED', '无法解析附件父目录'); }
+      if (!this.#inside(canonical)) throw new AppError('PATH_OUTSIDE_WORKSPACE', '附件父目录位于 workspace 之外');
+      // Check canonical ancestors too: an alias must not enter a sensitive or ignored directory.
+      const canonicalParts = path.relative(this.root, canonical).split(path.sep).filter(Boolean);
+      for (let j = 1; j <= canonicalParts.length; j++) this.#assertAllowed(canonicalParts.slice(0, j).join('/'));
+      if (!(await lstat(canonical)).isDirectory()) throw new AppError('PATH_BLOCKED', '附件父路径不是目录');
+      current = canonical;
+    }
+    throw new AppError('INVALID_INPUT', '附件路径无效');
   }
   async #checkMissingAncestors(candidate: string): Promise<void> {
     // Windows can report ENOENT when an ancestor is a file rather than a directory.
@@ -63,7 +101,10 @@ export class PathPolicy {
   }
   #decode(input: string): string {
     if (path.isAbsolute(input) || input.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
-    try { return decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
+    let decoded: string;
+    try { decoded = decodeURIComponent(input); } catch { throw new AppError('INVALID_INPUT', '路径编码无效'); }
+    if (path.isAbsolute(decoded) || path.win32.isAbsolute(decoded) || decoded.includes('\0')) throw new AppError('PATH_OUTSIDE_WORKSPACE', '仅允许 workspace 相对路径');
+    return decoded;
   }
   #assertAllowed(relative: string, allowIgnored = false, allowBridgeConfig = false): void {
     const normalized = relative.replaceAll('\\', '/');

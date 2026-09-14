@@ -11,7 +11,7 @@ import { registerMcpGateway } from './mcp-gateway.js';
 
 type Shape = z.ZodRawShape | z.ZodType;
 interface ToolExtra { signal: AbortSignal }
-interface BuiltinConfig { title?: string; description?: string; inputSchema: Shape; outputSchema?: Shape; annotations?: Tool['annotations'] }
+interface BuiltinConfig { title?: string; description?: string; inputSchema: Shape; outputSchema?: Shape; annotations?: Tool['annotations']; _meta?: Tool['_meta'] }
 export interface BuiltinToolRegistrar { registerTool(name: string, config: BuiltinConfig, handler: (input: never, extra: ToolExtra) => Promise<CallToolResult>): void }
 interface Entry { definition: Tool; invoke(args: unknown, extra: ToolExtra): Promise<CallToolResult> }
 
@@ -26,6 +26,7 @@ export class ToolCatalog implements BuiltinToolRegistrar {
         name, inputSchema: z.toJSONSchema(input, { io: 'input', target: 'draft-7' }) as Tool['inputSchema'],
         ...(config.title ? { title: config.title } : {}), ...(config.description ? { description: config.description } : {}),
         ...(config.annotations ? { annotations: config.annotations } : {}),
+        ...(config._meta ? { _meta: config._meta } : {}),
         ...(output ? { outputSchema: z.toJSONSchema(output, { io: 'output', target: 'draft-7' }) as NonNullable<Tool['outputSchema']> } : {}),
       },
       invoke: async (args, extra) => {

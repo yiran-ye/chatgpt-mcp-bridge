@@ -16,6 +16,8 @@ import { effectiveAccess } from '../runtime/access.js';
 import { MutationCoordinator } from '../security/mutation-coordinator.js';
 import { PatchService, type PatchInput } from '../workspace/patch-service.js';
 import { CommandService, FullAccessCommandService } from '../command/command-service.js';
+import { AttachmentService } from '../workspace/attachment-service.js';
+import { attachmentInputSchema, attachmentOutputSchema } from '../attachment/schemas.js';
 
 const outputSchema = { data: z.record(z.string(), z.unknown()).describe('结构化工具结果') };
 type ToolResult = { content: [{ type: 'text'; text: string }]; structuredContent?: { data: Record<string, unknown> }; isError?: boolean };
@@ -42,7 +44,7 @@ export function registerTools(server: BuiltinToolRegistrar, workspace: Workspace
   server.registerTool('workspace_info', { title: '工作区信息', description: '返回项目技术栈、Git、远程仓库脱敏摘要与顶层结构；不读取文件正文。', inputSchema: {}, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('workspace_info', async () => {
     const status = await git.status(); const names = await readdir(workspace.root); const remote = await remoteSummary(git); const languages = detectLanguages(names);
     const commandPolicy = access === 'full-access' ? 'unrestricted' : access === 'command-exec' ? 'allowlist' : 'none';
-    return { workspaceName: workspace.name, repositoryName: remote.slug ?? workspace.name, branch: status.branch, head: status.head, remote, hasPackageJson: names.includes('package.json'), hasPomXml: names.includes('pom.xml'), hasGradle: names.includes('build.gradle') || names.includes('build.gradle.kts'), hasPyproject: names.includes('pyproject.toml'), hasGoMod: names.includes('go.mod'), languages, topLevel: names.filter(name => name !== '.git' && !isSensitive(name)).slice(0, 100), isDirty: status.files.length > 0, commands: commands?.summaries() ?? [], mcp: { enabled: Boolean(options?.mcpProxy), servers: options?.mcpProxy?.summaries() ?? [] }, security: { access, readOnly: access === 'read-only' && !options?.mcpProxy, commandPolicy, sensitiveFilesBlocked: !options?.mcpProxy, workspaceContained: !options?.mcpProxy, networkDisabledForTools: access !== 'command-exec' && access !== 'full-access' && !options?.mcpProxy, localToolsReadOnly: access === 'read-only' } };
+    return { workspaceName: workspace.name, repositoryName: remote.slug ?? workspace.name, branch: status.branch, head: status.head, remote, hasPackageJson: names.includes('package.json'), hasPomXml: names.includes('pom.xml'), hasGradle: names.includes('build.gradle') || names.includes('build.gradle.kts'), hasPyproject: names.includes('pyproject.toml'), hasGoMod: names.includes('go.mod'), languages, topLevel: names.filter(name => name !== '.git' && !isSensitive(name)).slice(0, 100), isDirty: status.files.length > 0, commands: commands?.summaries() ?? [], mcp: { enabled: Boolean(options?.mcpProxy), servers: options?.mcpProxy?.summaries() ?? [] }, security: { access, readOnly: access === 'read-only' && !options?.mcpProxy, commandPolicy, sensitiveFilesBlocked: !options?.mcpProxy, workspaceContained: !options?.mcpProxy, networkDisabledForTools: access === 'read-only' && !options?.mcpProxy, localToolsReadOnly: access === 'read-only' } };
   }) as never);
   server.registerTool('workspace_instructions', { title: '项目指令', description: '按优先级读取根目录 AGENTS.override.md、AGENTS.md、agents.md，支持分页。', inputSchema: { cursor: z.string().optional(), maxBytes: z.number().int().min(1024).max(131072).default(65536) }, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('workspace_instructions', async (input: { cursor?: string; maxBytes: number }) => {
     const found: Array<{ path: string; priority: number; content: string }> = []; for (const [priority, name] of ['AGENTS.override.md', 'AGENTS.md', 'agents.md'].entries()) try { const absolute = path.join(workspace.root, name); if ((await stat(absolute)).size > 1024 * 1024) continue; const content = await readFile(absolute, 'utf8'); found.push({ path: name, priority: 3 - priority, content }); } catch { /* absent */ }
@@ -61,6 +63,14 @@ export function registerTools(server: BuiltinToolRegistrar, workspace: Workspace
   server.registerTool('search_workspace', { title: '搜索源码', description: '使用受限 ripgrep（不可用时 Node fallback）分页搜索源码，遵循 ignore 与敏感文件策略。', inputSchema: { query: z.string().min(1).max(500), isRegex: z.boolean().default(false), glob: z.union([z.string(), z.array(z.string()).max(20)]).optional(), maxResults: z.number().int().min(1).max(100).default(50), contextLines: z.number().int().min(0).max(3).default(0), caseSensitive: z.boolean().default(false), cursor: z.string().optional() }, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('search_workspace', input => search.search(input)) as never);
   server.registerTool('list_directory', { title: '列出目录', description: '在 workspace 内分页列出目录、文件和符号链接及其安全状态，不跟随越界链接。', inputSchema: { path: z.string().default('.'), depth: z.number().int().min(1).max(3).default(1), maxEntries: z.number().int().min(1).max(500).default(200), cursor: z.string().optional() }, outputSchema, annotations: READ_ONLY_ANNOTATIONS }, wrap('list_directory', input => files.list(input)) as never);
   if (access !== 'read-only') {
+    const attachments = new AttachmentService(workspace, coordinator);
+    server.registerTool('save_attachment', {
+      title: '保存附件到本地',
+      description: '将 ChatGPT 提供的图片或文档附件原样保存到工作区相对路径（包含文件名），自动创建父目录。单文件最多 20 MiB，不覆盖同名文件；保留敏感和 ignore 规则。需要真实文件参数，不能使用 sandbox: 路径或编造下载地址。',
+      inputSchema: attachmentInputSchema, outputSchema: attachmentOutputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      _meta: { 'openai/fileParams': ['file'] },
+    }, wrap('save_attachment', (input, signal) => attachments.save(input, signal)) as never);
     const patchSchema = z.discriminatedUnion('operation', [
       z.object({ operation: z.literal('create_file'), path: z.string().min(1).max(4096), diff: z.string().max(256 * 1024) }).strict(),
       z.object({ operation: z.literal('update_file'), path: z.string().min(1).max(4096), diff: z.string().max(256 * 1024), expectedSha256: z.string().regex(/^[a-f0-9]{64}$/u) }).strict(),

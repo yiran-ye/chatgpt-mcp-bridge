@@ -18,12 +18,13 @@
 显式启用 `workspace-write` 后增加：
 
 - `apply_patch`：单文件 `create_file`、`update_file` 或 `delete_file`；声明为非只读、破坏性、非幂等、封闭世界工具。
+- `save_attachment`：将文件原始字节保存到工作区，最多 20 MiB，不覆盖已有目标；声明为非只读、非破坏性、非幂等、开放世界工具。
 
 显式启用 `command-exec` 后再增加：
 
 - `run_command`：选择用户配置中的命令 ID；声明为非只读、破坏性、非幂等、开放世界工具。非零退出和超时作为含 stdout/stderr 的结构化结果返回。
 
-显式启用 `full-access` 后同样增加 `apply_patch` 与 `run_command`，但 `run_command` 不使用命令白名单，输入为：
+显式启用 `full-access` 后同样增加 `apply_patch`、`save_attachment` 与 `run_command`，但 `run_command` 不使用命令白名单，输入为：
 
 - `executable`：PATH 中的程序名，或通过 `PathPolicy` 校验的 workspace 相对可执行文件；不接受绝对路径。
 - `args`：可选参数数组；不接受 shell 字符串，也不解析 shell 元字符。
@@ -34,6 +35,24 @@
 `full-access` 子进程完整继承 Bridge 进程环境，包括 `HOME`、`JAVA_HOME`、工具配置及 Token 等凭据；无需额外环境参数。命令结果可能包含程序主动打印的环境值，不会按全部环境值自动脱敏。该模式没有 OS 沙箱，程序仍可能访问当前系统用户可访问的文件与网络。`command-exec` 继续使用最小环境和显式 `forwardEnv`。
 
 两种命令模式都会响应 MCP 取消信号。HTTP 传输下，命令还受请求 deadline 限制（默认 30 秒）；客户端取消、连接中断或 deadline 到期会终止进程树。工具参数中的更长 `timeoutMs` 不会覆盖 HTTP deadline。
+
+## 保存附件
+
+`save_attachment` 的输入为 `{file, path}`：
+
+- `file.download_url`、`file.file_id` 必填；`file.mime_type`、`file.file_name` 可选。四个属性都在工具 schema 中声明，`_meta["openai/fileParams"]` 为 `["file"]`，以便 ChatGPT 传入真实附件。
+- `path` 必填，包含文件名，使用 `/` 分隔的工作区相对路径，例如 `assets/image.png`；父目录可自动创建。不接受绝对路径、`..`、反斜杠、空段、`.` 段、Windows 设备名称、冒号或以空格/点结尾的路径段。
+- 原文件名和 MIME 仅作提示，不决定落盘路径；不解析、转换、执行或解压文件。沿用 ignore，因此默认仍拒绝 `.zip`、`.jar` 等路径。
+
+成功返回 `structuredContent.data: {path, bytes, sha256}`，路径为实际的工作区相对路径，SHA-256 由下载字节计算。文件内容不会进入工具响应。`read_file` 仍只支持原有大小限制内的 UTF-8 文本，不能用来读取已保存的二进制附件。
+
+单文件硬上限 20 MiB（20,971,520 字节），不依赖响应头的长度声明；排队、下载及提交前准备限时 25 秒，同时响应更短的宿主或 HTTP deadline。提交前超时、取消或下载失败不会创建目标，并清理临时文件；已创建的空父目录可能保留。连接失败时仅依次尝试同次 DNS 校验通过的公网地址，每次等待响应头最多 3 秒；不重试证书错误、HTTP 错误或正文传输，临时链接失效时需要客户端提供新的文件参数。
+
+临时文件同步并关闭、路径复查完成后进入原子提交。提交一旦开始，服务等待提交和清理完成，返回实际成功或失败，晚到的取消不再改写为 `TIMEOUT`；这一不可取消阶段可能超出 25 秒。客户端断连或 HTTP deadline 仍可能使结果无法送达，此时目标可能已保存，重试前应先检查目标是否存在。
+
+错误码包括 `FILE_CONFLICT`（目标已存在，另选名称）、`FILE_TOO_LARGE`、`DOWNLOAD_BLOCKED`（地址策略拒绝）、`DOWNLOAD_FAILED`（下载或保存失败）、`TIMEOUT`，以及已有路径策略错误。拒绝覆盖参数；目标已存在时不下载。只接受公网 HTTPS 标准端口，最多三次重定向；不会发送本地环境凭据、Cookie 或 Bridge Bearer Token。
+
+工具默认不可用；通过 `--access workspace-write` 或更高模式启用。写模式具备附件下载网络能力，所以 `workspace_info.security.networkDisabledForTools` 为 false。默认工具总数为 13，`workspace-write` 为 15，命令模式为 16。
 
 ## 上游 MCP 工具
 

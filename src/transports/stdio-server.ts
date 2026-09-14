@@ -5,12 +5,15 @@ import type { AuditLogger } from '../security/audit-logger.js';
 import type { BridgeOptions } from '../runtime/access.js';
 
 export async function startStdio(workspace: WorkspaceContext, logger?: AuditLogger, options?: BridgeOptions): Promise<void> {
+  const lifecycle = new AbortController();
+  const abortSignal = options?.abortSignal ? AbortSignal.any([options.abortSignal, lifecycle.signal]) : lifecycle.signal;
   let server: ReturnType<typeof createMcpServer>;
-  try { server = createMcpServer(workspace, logger, options); }
+  try { server = createMcpServer(workspace, logger, { ...options, abortSignal }); }
   catch (error) { await options?.mcpProxy?.close(); throw error; }
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
     closing ??= Promise.resolve().then(async () => {
+      lifecycle.abort();
       process.off('SIGINT', stop); process.off('SIGTERM', stop); process.stdin.off('end', stop);
       await Promise.all([server.close(), options?.mcpProxy?.close()]);
     });

@@ -102,6 +102,30 @@ Developer Mode、Plugins 或自定义 MCP 功能入口依赖账号、workspace�
 
 若要通过 HTTP Tunnel 使用 `workspace-write`、`command-exec` 或 `full-access`，本地 MCP 必须保持 loopback，并通过 `CHATGPT_MCP_BRIDGE_TOKEN` 或 `--auth-token` 设置至少 32 字符的 Bearer Token；只有在 tunnel-client profile 已配置相应的 MCP 侧认证时才使用该方式，否则使用上面的 stdio profile。HTTP 命令还受本地请求 deadline 限制，长时间任务优先使用 stdio。优先启用宿主逐次审批或仅写工具审批。完全免审批及 `full-access` 只适用于可信机器和可信工作区。
 
+## 附件保存
+
+使用上述 `--access workspace-write` 的 stdio Tunnel profile，或已配置强认证的 HTTP 写入连接。无需配置 OpenAI Files API Key；Bridge 使用客户端提供的临时下载链接。
+
+升级并重启 Bridge 后，在 ChatGPT 网页和桌面各自的插件管理入口刷新工具列表（入口名称随客户端变化），确认存在 `save_attachment`。该工具通过 [官方文件参数机制](https://developers.openai.com/plugins/reference#define-file-inputs) 声明 `_meta["openai/fileParams"]: ["file"]`；工具调用需要真实的 `download_url` 和 `file_id`，不能把 `sandbox:/mnt/data/...` 当作本机文件，也不能自行编造下载地址。
+
+在对话中指定目标，例如：
+
+> 把刚生成的图片保存到当前项目的 `assets/image.png`。
+>
+> 把这份 PDF 保存到 `attachments/report.pdf`。
+
+文件按原始字节保存，最多 20 MiB，自动创建安全父目录；同名时报错，由用户或模型选择其他名称。成功结果包含相对路径、大小和 SHA-256。客户端无法传递生成产物时，应明确报告该限制；如需重新附加文件，应由用户选择，不能声称原生直接保存已通过验收。
+
+网页和桌面需分别验证以下流程，不能以模拟 MCP 调用替代：
+
+1. 新对话中生成图片，调用 `save_attachment`，检查实际落盘图像及返回大小/哈希。
+2. 生成 PDF 或办公文档，保存后检查文件可打开、字节与原始附件一致。
+3. 重复保存到同一路径，确认返回冲突且原文件不变。
+
+当前自动化测试覆盖工具 schema、下载和落盘边界、HTTP 与 stdio 协议；不代表真实 ChatGPT 网页/桌面已支持所有生成产物。客户端联调状态应在实际完成上述流程后记录。
+
+若返回 `DOWNLOAD_BLOCKED` 并提示域名解析到保留地址，检查本机 DNS/代理是否启用了 Fake-IP，例如返回 `198.18.0.0/15` 地址。附件下载需要真实公网 DNS 结果；应让相应下载域名返回真实公网地址后再联调。Bridge 不将代理虚拟地址加入允许列表，也不通过环境代理绕过地址校验。
+
 本项目是社区维护的非官方开源项目，与 OpenAI 无隶属、合作、认证或背书关系。
 
 不要默认使用无认证 Cloudflare Quick Tunnel，不要把本地 MCP 裸露到公网。若以后使用公共 HTTPS，必须部署正式 TLS、认证、访问控制与密钥轮换。public bind 的最低要求是 `--allow-public-bind` 加 `CHATGPT_MCP_BRIDGE_TOKEN`/`--auth-token`，但这不替代生产安全网关。

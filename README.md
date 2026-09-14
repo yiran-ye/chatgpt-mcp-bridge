@@ -81,9 +81,11 @@ stdio 模式的 stdout 仅用于 MCP 协议，日志写入 stderr。
 
 ## 可写与命令模式
 
-`workspace-write` 新增 `apply_patch`，只允许在工作区内创建、更新或删除单个 UTF-8 普通文件。更新与删除必须提交 `read_file` 返回的 `sha256`，敏感文件、ignore 路径、`.git` 和 Bridge 配置始终被拒绝。
+`workspace-write` 新增 `apply_patch` 和 `save_attachment`。`apply_patch` 只处理单个 UTF-8 普通文件，更新与删除必须提交 `read_file` 返回的 `sha256`。`save_attachment` 将 ChatGPT 提供的图片、PDF、Word、Excel 等附件原样保存到工作区，单文件最多 20 MiB，自动创建父目录，同名文件报冲突。敏感文件、ignore 路径、`.git` 和 Bridge 配置始终被拒绝。
 
-`command-exec` 同时开放 `apply_patch` 和 `run_command`。它不接受 shell 字符串，只能运行用户配置中的 executable 与参数数组：
+例如，在 ChatGPT 中说“把这张图片保存到 `assets/image.png`”。工具通过 `openai/fileParams` 接收文件的临时 HTTPS 下载地址，不需要复制 Base64；是否能直接传递某个生成产物取决于客户端。升级并重启 Bridge 后，需要刷新插件工具列表。详见 [附件接入与验收](docs/CHATGPT_SETUP.md#附件保存)。
+
+`command-exec` 同时开放 `apply_patch`、`save_attachment` 和 `run_command`。命令工具不接受 shell 字符串，只能运行用户配置中的 executable 与参数数组：
 
 ```json
 {
