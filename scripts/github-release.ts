@@ -20,7 +20,7 @@ const version = tag.data.slice(1); const historical = flags.data.some(flag => fl
 const packageJson = packageSchema.parse(JSON.parse(await readFile('package.json', 'utf8')) as unknown);
 if (!historical && packageJson.version !== version) throw new Error(`tag ${tag} 与 package.json ${packageJson.version} 不一致`);
 const notes = await releaseNotes(version); const body = `${notes}\n\n- npm：https://www.npmjs.com/package/${packageJson.name}/v/${version}`;
-const title = `${packageJson.name} ${tag.data}`;
+const title = tag.data;
 const exists = spawnSync('gh', ['release', 'view', tag.data], { encoding: 'utf8', shell: false, stdio: 'ignore' }).status === 0;
 const args = ['release', exists ? 'edit' : 'create', tag.data, '--verify-tag', '--title', title, '--notes', body];
 if (latestFalse) args.push('--latest=false');
