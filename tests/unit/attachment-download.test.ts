@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { request, type RequestOptions } from 'node:https';
 import type { ClientRequest, IncomingMessage, IncomingHttpHeaders } from 'node:http';
 import { Readable } from 'node:stream';
-import { ATTACHMENT_CONNECTION_TIMEOUT_MS, attachmentUrl, downloadAttachment, isPublicAddress } from '../../src/attachment/download.js';
+import { ATTACHMENT_CONNECTION_TIMEOUT_MS, attachmentUrl, downloadAttachment, isProxyFakeIp, isPublicAddress } from '../../src/attachment/download.js';
 import { MAX_ATTACHMENT_BYTES } from '../../src/attachment/schemas.js';
 
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn() }));
@@ -15,6 +15,16 @@ const lookupMock = vi.mocked(lookup as (hostname: string, options: LookupAllOpti
 function response(status: number, headers: IncomingHttpHeaders = {}): IncomingMessage {
   return Object.assign(Readable.from([Buffer.from([0, 255, 13, 10])]), { statusCode: status, headers }) as IncomingMessage;
 }
+
+function rawResponse(status: number, body: string | Buffer): IncomingMessage {
+  return Object.assign(Readable.from([Buffer.isBuffer(body) ? body : Buffer.from(body)]), { statusCode: status, headers: {} }) as IncomingMessage;
+}
+
+function jsonResponse(payload: unknown): IncomingMessage {
+  return rawResponse(200, JSON.stringify(payload));
+}
+
+const dohAnswer = (type: number, data: string): { name: string; type: number; TTL: number; data: string } => ({ name: 'files.example.org.', type, TTL: 60, data });
 
 describe('附件 HTTPS 下载边界', () => {
   const requested: Array<{ url: URL; options: RequestOptions }> = [];
@@ -52,6 +62,10 @@ describe('附件 HTTPS 下载边界', () => {
   ])('拒绝非公网地址 %s', address => expect(isPublicAddress(address)).toBe(false));
 
   it.each(['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '2001:4860:4860::8888'])('允许公网地址 %s', address => expect(isPublicAddress(address)).toBe(true));
+
+  it.each(['198.18.0.1', '198.18.0.54', '198.19.255.254'])('识别代理 Fake-IP 段 %s', address => expect(isProxyFakeIp(address)).toBe(true));
+
+  it.each(['198.17.255.255', '198.20.0.1', '10.20.30.15', '127.0.0.1', '0.0.0.0', '::1', '2606:4700::1', 'not-an-address'])('非 Fake-IP 段 %s 不触发公共 DoH', address => expect(isProxyFakeIp(address)).toBe(false));
 
   it.each([
     'http://example.org/a', 'file:///etc/passwd', 'sandbox:/mnt/data/a.png', 'data:image/png;base64,eA==',
@@ -135,8 +149,115 @@ describe('附件 HTTPS 下载边界', () => {
   it('重定向每跳重新检查 DNS，拒绝转向内网且销毁前一响应', async () => {
     const redirect = response(302, { location: 'https://internal.example.org/a' }); replies.push(redirect);
     lookupMock.mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }]).mockResolvedValueOnce([{ address: '10.1.2.3', family: 4 }]);
+    const pending = downloadAttachment('https://files.example.org/a', new AbortController().signal);
+    await expect(pending).rejects.toMatchObject({ code: 'DOWNLOAD_BLOCKED' });
+    await expect(pending).rejects.not.toThrow('10.1.2.3');
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['files.example.org']);
+    expect(redirect.destroyed).toBe(true);
+  });
+
+  it.each([
+    [[{ address: '127.0.0.1', family: 4 }]],
+    [[{ address: '0.0.0.0', family: 4 }]],
+    [[{ address: '10.20.30.15', family: 4 }]],
+    [[{ address: '198.18.0.54', family: 4 }, { address: '10.1.2.3', family: 4 }]],
+  ])('内网、hosts 与 sinkhole 结果不查询公共 DoH 且不泄露地址 %j', async system => {
+    lookupMock.mockResolvedValueOnce(system);
+    const pending = downloadAttachment('https://internal.example.org/a?sig=private', new AbortController().signal);
+    await expect(pending).rejects.toMatchObject({ code: 'DOWNLOAD_BLOCKED' });
+    for (const item of system) await expect(pending).rejects.not.toThrow(item.address);
+    await expect(pending).rejects.not.toThrow('private');
+    expect(requested).toHaveLength(0);
+  });
+
+  it('系统解析全为保留地址时回退公共 DoH 并固定其公网结果', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(jsonResponse({ Status: 0, Answer: [dohAnswer(1, '104.18.7.4')] }), jsonResponse({ Status: 0, Answer: [dohAnswer(28, '2606:4700::6812:704')] }), response(200));
+    const result = await downloadAttachment('https://files.example.org/a?sig=private', new AbortController().signal);
+    expect(result.statusCode).toBe(200);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1', 'files.example.org']);
+    expect(requested[0]?.url.pathname).toBe('/dns-query');
+    expect(requested[0]?.options).toMatchObject({ method: 'GET', agent: false, rejectUnauthorized: true });
+    expect(requested[2]?.options).toMatchObject({ family: 4 });
+    const callback = vi.fn(); requested[2]?.options.lookup?.('files.example.org', { family: 4 }, callback);
+    expect(callback).toHaveBeenCalledWith(null, '104.18.7.4', 4);
+  });
+
+  it('DoH 结果仍需全公网，错误信息不含解析地址与链接参数', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(jsonResponse({ Status: 0, Answer: [dohAnswer(1, '10.0.0.5')] }), jsonResponse({ Status: 0, Answer: [] }));
+    const pending = downloadAttachment('https://files.example.org/a?sig=private', new AbortController().signal);
+    await expect(pending).rejects.toMatchObject({ code: 'DOWNLOAD_BLOCKED' });
+    await expect(pending).rejects.toThrow('files.example.org');
+    await expect(pending).rejects.not.toThrow('10.0.0.5');
+    await expect(pending).rejects.not.toThrow('private');
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1']);
+  });
+
+  it('首个 DoH 端点不可用时回退下一个公共解析器', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(response(200), jsonResponse({ Status: 0, Answer: [] }), jsonResponse({ Status: 0, Answer: [dohAnswer(1, '104.18.7.4')] }), jsonResponse({ Status: 0, Answer: [] }), response(200));
+    await downloadAttachment('https://files.example.org/a', new AbortController().signal);
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1', '8.8.8.8', '8.8.8.8', 'files.example.org']);
+    expect(requested[2]?.url.pathname).toBe('/resolve');
+    expect(requested[4]?.options).toMatchObject({ family: 4 });
+  });
+
+  it('DoH 查询不跟随重定向', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(response(302, { location: 'https://example.org/evil' }));
     await expect(downloadAttachment('https://files.example.org/a', new AbortController().signal)).rejects.toMatchObject({ code: 'DOWNLOAD_BLOCKED' });
-    expect(requested).toHaveLength(1); expect(redirect.destroyed).toBe(true);
+    expect(requested.every(entry => entry.url.hostname !== 'example.org')).toBe(true);
+  });
+
+  it('取消发生在 DoH 查询期间时不再尝试下一个公共解析器', async () => {
+    vi.useFakeTimers();
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    attempts.push('hang');
+    const controller = new AbortController();
+    const pending = downloadAttachment('https://files.example.org/a', controller.signal);
+    const checked = expect(pending).rejects.toMatchObject({ code: 'TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(0); controller.abort(); await checked;
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1']);
+  });
+
+  it('DoH 返回非零 DNS 状态时其答案不被采信', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(
+      jsonResponse({ Status: 2, Answer: [dohAnswer(1, '104.18.7.4')] }), jsonResponse({ Status: 0, Answer: [] }),
+      jsonResponse({ Status: 0, Answer: [dohAnswer(1, '1.2.3.4')] }), jsonResponse({ Status: 0, Answer: [] }),
+      response(200),
+    );
+    await downloadAttachment('https://files.example.org/a', new AbortController().signal);
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1', '8.8.8.8', '8.8.8.8', 'files.example.org']);
+    const callback = vi.fn(); requested[4]?.options.lookup?.('files.example.org', { family: 4 }, callback);
+    expect(callback).toHaveBeenCalledWith(null, '1.2.3.4', 4);
+  });
+
+  it.each([
+    'not json at all', 'null', '42', '{"Status":"0","Answer":[]}', '{"Status":3,"Answer":[]}',
+    '{"Status":0,"Answer":{"type":1,"data":"1.2.3.4"}}', '{"Status":0,"Answer":[{"type":1,"data":42}]}',
+  ])('畸形 DoH 响应一律视为端点失败 %j', async payload => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(rawResponse(200, payload), rawResponse(200, payload), rawResponse(200, payload), rawResponse(200, payload));
+    await expect(downloadAttachment('https://files.example.org/a', new AbortController().signal)).rejects.toMatchObject({ code: 'DOWNLOAD_BLOCKED' });
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1', '8.8.8.8', '8.8.8.8']);
+  });
+
+  it('超过 16 KiB 的 DoH 响应被视为端点失败并回退下一解析器', async () => {
+    lookupMock.mockResolvedValueOnce([{ address: '198.18.0.54', family: 4 }]);
+    replies.push(
+      rawResponse(200, Buffer.alloc(17 * 1024, 0x61)),
+      jsonResponse({ Status: 0, Answer: [] }),
+      jsonResponse({ Status: 0, Answer: [dohAnswer(1, '1.2.3.4')] }),
+      jsonResponse({ Status: 0, Answer: [] }),
+      response(200),
+    );
+    await downloadAttachment('https://files.example.org/a', new AbortController().signal);
+    expect(requested.map(entry => entry.url.hostname)).toEqual(['1.1.1.1', '1.1.1.1', '8.8.8.8', '8.8.8.8', 'files.example.org']);
+    const callback = vi.fn(); requested[4]?.options.lookup?.('files.example.org', { family: 4 }, callback);
+    expect(callback).toHaveBeenCalledWith(null, '1.2.3.4', 4);
   });
 
   it.each(['http://example.org/a', 'https://user:pass@example.org/a', 'https://[::1]/a', 'https://example.org:9000/a'])('拒绝不安全重定向 %s', async location => {

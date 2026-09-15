@@ -42,7 +42,7 @@ describe('附件保存与文件安全', () => {
   });
   afterEach(async () => { vi.useRealTimers(); await coordinator.run(() => Promise.resolve()); await rm(directory, { recursive: true, force: true }); });
 
-  it.each(['png', 'pdf', 'docx', 'xlsx'])('原样保存 %s 字节，创建中文父目录并返回哈希', async extension => {
+  it.each(['png', 'pdf', 'docx', 'xlsx', 'zip'])('原样保存 %s 字节，创建中文父目录并返回哈希', async extension => {
     const bytes = Buffer.from([0, 255, 254, 13, 10, 80, 75, 3, 4]);
     vi.mocked(downloadAttachment).mockResolvedValueOnce(response([bytes.subarray(0, 3), bytes.subarray(3)], bytes.length));
     const target = `附件/图片/result.${extension}`;
@@ -76,12 +76,19 @@ describe('附件保存与文件安全', () => {
     ['.env', 'SENSITIVE_FILE'], ['private.key', 'SENSITIVE_FILE'], ['.env/sub/file.png', 'SENSITIVE_FILE'],
     ['.git/objects/image.png', 'PATH_BLOCKED'], ['.chatgpt-mcp-bridge/mcp.json', 'PATH_BLOCKED'],
     ['.chatgpt-mcp-bridge-ignore', 'PATH_BLOCKED'], ['private-dir/image.png', 'PATH_BLOCKED'],
-    ['ignored.pdf', 'PATH_BLOCKED'], ['bundle.zip', 'PATH_BLOCKED'], ['dist/image.png', 'PATH_BLOCKED'],
+    ['ignored.pdf', 'PATH_BLOCKED'], ['bundle.jar', 'PATH_BLOCKED'], ['dist/image.png', 'PATH_BLOCKED'],
     ['nul.png', 'INVALID_INPUT'], ['images./file.png', 'INVALID_INPUT'], ['image.png:stream', 'PATH_OUTSIDE_WORKSPACE'],
   ])('下载前拒绝路径 %s', async (target, code) => {
     await expect(service.save({ file, path: target }, signal())).rejects.toMatchObject({ code });
     expect(downloadAttachment).not.toHaveBeenCalled();
     expect(await readdir(root)).toEqual(['.chatgpt-mcp-bridge-ignore']);
+  });
+
+  it('工作区 ignore 文件可重新禁止 zip 附件', async () => {
+    await writeFile(path.join(root, '.chatgpt-mcp-bridge-ignore'), 'private-dir/**\nignored.pdf\n*.zip\n');
+    const restricted = new AttachmentService(await WorkspaceContext.create(root), coordinator);
+    await expect(restricted.save({ file, path: 'bundle.zip' }, signal())).rejects.toMatchObject({ code: 'PATH_BLOCKED' });
+    expect(downloadAttachment).not.toHaveBeenCalled();
   });
 
   it('输入缺少字段或包含额外参数时拒绝', async () => {

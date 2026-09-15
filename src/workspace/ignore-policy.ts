@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import ignore, { type Ignore } from 'ignore';
 
-const defaults = ['.git/**', 'node_modules/**', 'target/**', 'dist/**', 'build/**', 'coverage/**', '.idea/**', '.vscode/**', '.gradle/**', '.mvn/wrapper/*.jar', 'vendor/**', '__pycache__/**', '*.class', '*.jar', '*.war', '*.zip'];
+// Archives are inert on disk (never extracted or executed here), so `.zip` is left to workspace policy;
+// executable-adjacent artifacts (.jar/.war/.class) stay denied by default. Add `*.zip` to
+// `.chatgpt-mcp-bridge-ignore` to keep archives out of a workspace.
+const defaults = ['.git/**', 'node_modules/**', 'target/**', 'dist/**', 'build/**', 'coverage/**', '.idea/**', '.vscode/**', '.gradle/**', '.mvn/wrapper/*.jar', 'vendor/**', '__pycache__/**', '*.class', '*.jar', '*.war'];
 
 export class IgnorePolicy {
   readonly #matcher: Ignore;

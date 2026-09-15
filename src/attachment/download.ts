@@ -5,7 +5,7 @@ import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
 import { AppError } from '../shared/errors.js';
 import { abortable } from '../shared/abort.js';
-import { attachmentDownloadUrlSchema, MAX_ATTACHMENT_BYTES } from './schemas.js';
+import { attachmentDownloadUrlSchema, dohResponseSchema, MAX_ATTACHMENT_BYTES } from './schemas.js';
 
 const blockedV4 = new BlockList();
 for (const [address, prefix] of [
@@ -26,6 +26,10 @@ export function isPublicAddress(address: string): boolean {
   return family === 6 && !address.includes('%') && globalV6.check(address, 'ipv6') && !blockedV6.check(address, 'ipv6');
 }
 
+const proxyFakeIpV4 = new BlockList(); proxyFakeIpV4.addSubnet('198.18.0.0', 15, 'ipv4');
+/** The reserved range proxy cores (Clash/mihomo, Surge, ...) hand out in Fake-IP DNS mode. */
+export function isProxyFakeIp(address: string): boolean { return isIP(address) === 4 && proxyFakeIpV4.check(address, 'ipv4'); }
+
 export function attachmentUrl(value: string): URL {
   if (!attachmentDownloadUrlSchema.safeParse(value).success) throw new AppError('DOWNLOAD_BLOCKED', '附件下载地址无效或过长');
   let url: URL;
@@ -39,10 +43,12 @@ export function attachmentUrl(value: string): URL {
 async function openResponse(url: URL, signal: AbortSignal): Promise<IncomingMessage> {
   signal.throwIfAborted();
   const hostname = url.hostname.replace(/^\[|\]$/gu, '');
-  const family = isIP(hostname);
-  const addresses = family ? [{ address: hostname, family }] : await abortable(lookup(hostname, { all: true, verbatim: true }), signal);
+  const addresses = await resolveAttachmentAddresses(hostname, signal);
   signal.throwIfAborted();
-  if (!addresses.length || addresses.some(item => !isPublicAddress(item.address))) throw new AppError('DOWNLOAD_BLOCKED', '附件域名解析到本机、内网或保留地址');
+  if (!addresses.length || addresses.some(item => !isPublicAddress(item.address))) {
+    // Echo only the client-supplied hostname: returning resolved addresses would let a probing client map the intranet.
+    throw new AppError('DOWNLOAD_BLOCKED', `附件域名解析到本机、内网或保留地址（${hostname}）`);
+  }
   for (const pinned of addresses) {
     signal.throwIfAborted();
     try { return await openPinnedResponse(url, pinned, signal); }
@@ -51,6 +57,82 @@ async function openResponse(url: URL, signal: AbortSignal): Promise<IncomingMess
     }
   }
   throw new AppError('DOWNLOAD_FAILED', '附件下载地址均无法连接');
+}
+
+async function resolveAttachmentAddresses(hostname: string, signal: AbortSignal): Promise<LookupAddress[]> {
+  const family = isIP(hostname);
+  if (family) return [{ address: hostname, family }];
+  const system = await abortable(lookup(hostname, { all: true, verbatim: true }), signal);
+  // Only the proxy Fake-IP range retries through public DoH. Hosts files, split-DNS and security-software
+  // sinkholes also answer with non-public addresses, and those local answers are honored as-is — never
+  // sent to third-party resolvers, never bypassed. The DoH answer still passes the same validation.
+  if (system.length && system.every(item => isProxyFakeIp(item.address))) {
+    const viaDoh = await lookupViaPublicDoh(hostname, signal);
+    if (viaDoh.length) return viaDoh;
+  }
+  return system;
+}
+
+interface DohEndpoint { address: string; path: (name: string, type: 'A' | 'AAAA') => string }
+// Reached at literal public addresses, so the fallback itself never depends on the system resolver.
+const dohEndpoints: DohEndpoint[] = [
+  { address: '1.1.1.1', path: (name, type) => `/dns-query?name=${encodeURIComponent(name)}&type=${type}` },
+  { address: '8.8.8.8', path: (name, type) => `/resolve?name=${encodeURIComponent(name)}&type=${type}` },
+];
+
+async function lookupViaPublicDoh(hostname: string, signal: AbortSignal): Promise<LookupAddress[]> {
+  for (const endpoint of dohEndpoints) {
+    signal.throwIfAborted();
+    if (!isPublicAddress(endpoint.address)) continue;
+    try {
+      const [v4, v6] = await Promise.all([dohQuery(endpoint, hostname, 'A', signal), dohQuery(endpoint, hostname, 'AAAA', signal)]);
+      const addresses: LookupAddress[] = [];
+      for (const [body, family] of [[v4, 4], [v6, 6]] as const) {
+        const parsed = dohResponseSchema.safeParse(JSON.parse(body.toString('utf8')));
+        if (!parsed.success) throw new Error('DoH response failed schema validation');
+        for (const record of parsed.data.Answer ?? []) {
+          if (isIP(record.data) === family) addresses.push({ address: record.data, family });
+        }
+      }
+      if (addresses.length) return addresses;
+    } catch { /* Try the next public resolver; a failed fallback keeps the system result. */ }
+  }
+  return [];
+}
+
+export const DOH_QUERY_TIMEOUT_MS = 3_000;
+const DOH_MAX_RESPONSE_BYTES = 16 * 1024;
+
+async function dohQuery(endpoint: DohEndpoint, hostname: string, type: 'A' | 'AAAA', signal: AbortSignal): Promise<Buffer> {
+  return await new Promise<Buffer>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error, body?: Buffer): void => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(body ?? Buffer.alloc(0));
+    };
+    const req = request(new URL(`https://${endpoint.address}${endpoint.path(hostname, type)}`), {
+      method: 'GET', agent: false, signal, rejectUnauthorized: true, maxHeaderSize: 16 * 1024,
+      headers: { accept: 'application/dns-json' },
+    }, response => {
+      response.on('error', () => undefined);
+      if (response.statusCode !== 200) { response.destroy(); finish(new Error('DoH resolver returned an unexpected status')); return; }
+      const chunks: Buffer[] = []; let size = 0;
+      response.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > DOH_MAX_RESPONSE_BYTES) { response.destroy(); finish(new Error('DoH response too large')); return; }
+        chunks.push(chunk);
+      });
+      response.on('end', () => finish(undefined, Buffer.concat(chunks)));
+      response.on('error', error => finish(error));
+    });
+    const timer = setTimeout(() => {
+      req.destroy(Object.assign(new Error('DoH query timed out'), { code: 'ETIMEDOUT' }));
+    }, DOH_QUERY_TIMEOUT_MS);
+    req.once('error', error => finish(error));
+    req.end();
+  });
 }
 
 const retryableConnectionCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'EHOSTUNREACH', 'ETIMEDOUT', 'EADDRNOTAVAIL', 'EPIPE']);

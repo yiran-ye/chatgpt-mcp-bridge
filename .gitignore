@@ -8,4 +8,5 @@ tmp/
 .DS_Store
 .idea/
 .vscode/
+.zcode/
 *.tsbuildinfo

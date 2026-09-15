@@ -4,6 +4,13 @@ export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 export const ATTACHMENT_TIMEOUT_MS = 25_000;
 export const attachmentDownloadUrlSchema = z.string().min(1).max(8192);
 
+// Cloudflare/Google DoH JSON. Unknown keys (Question, TTL, Comment, ...) are stripped; a non-zero
+// DNS status (NXDOMAIN, SERVFAIL, ...) must never be treated as a legitimate empty answer.
+export const dohResponseSchema = z.object({
+  Status: z.literal(0),
+  Answer: z.array(z.object({ type: z.number().int(), data: z.string() })).optional(),
+});
+
 // All four properties must be declared; only download_url and file_id may be required.
 export const attachmentInputSchema = z.object({
   file: z.object({
